@@ -1,0 +1,11 @@
+SYNTHKEY by Piradex @VERSAO@
+
+Sintetizador híbrido (analógico + wavetable + samples) com packs de estilo: Trap, R&B, Afrobeats, Amapiano, Drill, Kizomba e Kuduro.
+
+Instala:
+  • VST3        → /Library/Audio/Plug-Ins/VST3
+  • Audio Unit  → /Library/Audio/Plug-Ins/Components
+  • Packs       → /Library/Application Support/Piradex/SYNTHKEY/Packs  (opcional)
+
+Compatível com macOS 10.13 ou superior, Macs Intel e Apple Silicon.
+Ao abrir o plugin pela primeira vez é pedida a senha de acesso.

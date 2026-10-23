@@ -1,0 +1,4 @@
+#!/bin/sh
+# packs legíveis por todos os utilizadores do Mac
+chmod -R a+rX "/Library/Application Support/Piradex/SYNTHKEY" >/dev/null 2>&1
+exit 0

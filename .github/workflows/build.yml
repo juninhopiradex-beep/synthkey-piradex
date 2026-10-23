@@ -1,0 +1,233 @@
+name: Build SYNTHKEY by Piradex (macOS + Windows)
+
+# Segredo obrigatório (Settings → Secrets and variables → Actions → New repository secret):
+#   SYNTHKEY_SECRETS_B64  = conteúdo do ficheiro secrets.b64 (gerado por  python3 tools/gen_secrets.py)
+# Sem ele o build falha de propósito: as senhas e o segredo das chaves NUNCA ficam no repositório.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  VERSAO: "1.0.0"
+
+jobs:
+  testes-e-packs:
+    runs-on: ubuntu-latest
+    env:
+      SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes numéricos do núcleo (DSP, chaves, packs, presets)
+        run: |
+          g++ -O2 -std=c++17 -ISource tests/test_core.cpp -o test_core
+          g++ -O2 -std=c++17 -ISource tests/test_packio.cpp -o test_packio
+          g++ -O2 -std=c++17 -ISource tests/test_presets.cpp -o test_presets
+          ./test_core
+          ./test_packio
+          ./test_presets
+
+      - name: Injetar segredos (não vão para o repositório)
+        run: |
+          [ -n "$SYNTHKEY_SECRETS_B64" ] || { echo "Falta o segredo SYNTHKEY_SECRETS_B64"; exit 1; }
+          echo "$SYNTHKEY_SECRETS_B64" | base64 -d > Source/Secrets.h
+          grep -q "macSecret" Source/Secrets.h
+
+      - name: Gerar os packs de samples (.bfpack)
+        run: |
+          g++ -O2 -std=c++17 -ISource tools/packgen.cpp -o packgen
+          ./packgen packs dist-packs Resources/covers -
+          ls -la dist-packs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packs
+          path: dist-packs/*.bfpack
+          retention-days: 7
+
+  macos:
+    needs: testes-e-packs
+    runs-on: macos-14
+    env:
+      ART: build/SynthKey_artefacts/Release
+      SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: packs, path: dist-packs }
+
+      - name: Injetar segredos
+        run: |
+          [ -n "$SYNTHKEY_SECRETS_B64" ] || { echo "Falta o segredo SYNTHKEY_SECRETS_B64"; exit 1; }
+          echo "$SYNTHKEY_SECRETS_B64" | base64 -d > Source/Secrets.h
+
+      - name: Configurar (universal Intel + Apple Silicon, macOS 10.13+)
+        run: >
+          cmake -B build -G Xcode
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+
+      - name: Compilar VST3 + AU + Standalone
+        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_AU SynthKey_Standalone -- -quiet
+
+      - name: Verificar arquiteturas e versão mínima do macOS
+        run: |
+          for b in "$ART/VST3/SYNTHKEY by Piradex.vst3/Contents/MacOS/SYNTHKEY by Piradex" \
+                   "$ART/AU/SYNTHKEY by Piradex.component/Contents/MacOS/SYNTHKEY by Piradex" \
+                   "$ART/Standalone/SYNTHKEY by Piradex.app/Contents/MacOS/SYNTHKEY by Piradex"; do
+            echo "== $b"
+            archs=$(lipo -archs "$b"); echo "arquiteturas: $archs"
+            [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "FALTA uma arquitetura"; exit 1; }
+            minos=$(otool -arch x86_64 -l "$b" | awk '/LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION/{f=1} f&&/(version|minos)/{print $2; exit}')
+            echo "macOS mínimo (Intel): $minos"
+            [[ "$minos" == "10.13" ]] || { echo "Versão mínima inesperada"; exit 1; }
+          done
+
+      - name: Assinar ad-hoc
+        run: |
+          codesign --force --deep -s - "$ART/VST3/SYNTHKEY by Piradex.vst3"
+          codesign --force --deep -s - "$ART/AU/SYNTHKEY by Piradex.component"
+          codesign --force --deep -s - "$ART/Standalone/SYNTHKEY by Piradex.app"
+
+      - name: Validar Audio Unit (auval, Apple Silicon e Intel/Rosetta)
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART/AU/SYNTHKEY by Piradex.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 3
+          auval -a | grep -i piradex || true
+          auval -v aumu PxSK Prdx
+          softwareupdate --install-rosetta --agree-to-license || true
+          arch -x86_64 auval -v aumu PxSK Prdx
+
+      - name: Validar com pluginval
+        continue-on-error: true
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          set -o pipefail
+          pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --timeout-ms 300000 \
+            --validate "$ART/VST3/SYNTHKEY by Piradex.vst3" 2>&1 | tee pluginval-macOS.log
+
+      - name: Criar instalador .pkg e .dmg
+        run: |
+          mkdir -p stage
+          for f in distribution.xml welcome.txt LEIA-ME.txt; do sed "s/@VERSAO@/$VERSAO/g" "installer/$f" > "stage/$f"; done
+          mkdir -p root/Library/Audio/Plug-Ins/VST3 root/Library/Audio/Plug-Ins/Components root/Applications
+          cp -R "$ART/VST3/SYNTHKEY by Piradex.vst3" root/Library/Audio/Plug-Ins/VST3/
+          cp -R "$ART/AU/SYNTHKEY by Piradex.component" root/Library/Audio/Plug-Ins/Components/
+          cp -R "$ART/Standalone/SYNTHKEY by Piradex.app" root/Applications/
+          pkgbuild --root root --identifier com.piradex.synthkey.plugins --version "$VERSAO" \
+                   --install-location / --scripts installer/scripts synthkey-plugins.pkg
+          mkdir -p "root-packs/Library/Application Support/Piradex/SYNTHKEY/Packs"
+          cp dist-packs/*.bfpack "root-packs/Library/Application Support/Piradex/SYNTHKEY/Packs/"
+          pkgbuild --root root-packs --identifier com.piradex.synthkey.packs --version "$VERSAO" \
+                   --install-location / --scripts installer/scripts-packs synthkey-packs.pkg
+          productbuild --distribution stage/distribution.xml --resources stage \
+                       --package-path . "SYNTHKEY by Piradex $VERSAO.pkg"
+          mkdir -p dmg/Plugins dmg/Packs
+          cp "SYNTHKEY by Piradex $VERSAO.pkg" dmg/
+          cp stage/LEIA-ME.txt dmg/
+          cp -R "$ART/VST3/SYNTHKEY by Piradex.vst3" "$ART/AU/SYNTHKEY by Piradex.component" dmg/Plugins/
+          cp dist-packs/*.bfpack dmg/Packs/
+          hdiutil create -volname "SYNTHKEY by Piradex" -srcfolder dmg -ov -format UDZO "SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg"
+          ls -la *.pkg *.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SYNTHKEY-macOS
+          path: |
+            SYNTHKEY-by-Piradex-*-macOS.dmg
+            pluginval-macOS.log
+
+  windows:
+    needs: testes-e-packs
+    runs-on: windows-2022
+    env:
+      ART: build/SynthKey_artefacts/Release
+      SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: packs, path: dist-packs }
+
+      - name: Injetar segredos
+        shell: pwsh
+        run: |
+          if (-not $env:SYNTHKEY_SECRETS_B64) { throw "Falta o segredo SYNTHKEY_SECRETS_B64" }
+          [IO.File]::WriteAllBytes("Source/Secrets.h", [Convert]::FromBase64String($env:SYNTHKEY_SECRETS_B64))
+
+      - name: Configurar (x64, Visual Studio 2022)
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Compilar VST3 + Standalone
+        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_Standalone --parallel 4
+
+      - name: Verificar binário x64 e dependências
+        shell: pwsh
+        run: |
+          $dll = "$env:ART/VST3/SYNTHKEY by Piradex.vst3/Contents/x86_64-win/SYNTHKEY by Piradex.vst3"
+          if (!(Test-Path $dll)) { throw "VST3 não encontrado" }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -like "*Hostx64\x64*" } | Select-Object -First 1
+          & $dumpbin.FullName /headers $dll | Select-String "machine"
+          $deps = & $dumpbin.FullName /dependents $dll
+          $deps
+          if ($deps -match "VCRUNTIME|MSVCP") { throw "Depende do VC++ Redistributable (runtime devia estar embutido)" }
+
+      - name: Validar com pluginval
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pv
+          & .\pv\pluginval.exe --strictness-level 5 --timeout-ms 300000 --validate "$env:ART/VST3/SYNTHKEY by Piradex.vst3" 2>&1 | Tee-Object -FilePath pluginval-Windows.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Criar instalador (Inno Setup) e .zip
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DVersao=$env:VERSAO" installer\windows.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup falhou" }
+          New-Item -ItemType Directory -Force zipstage/Packs | Out-Null
+          Copy-Item "$env:ART/VST3/SYNTHKEY by Piradex.vst3" zipstage -Recurse
+          Copy-Item "dist-packs/*.bfpack" zipstage/Packs
+          Copy-Item installer/LEIA-ME-Windows.txt zipstage
+          Compress-Archive -Path "zipstage/*" -DestinationPath "out-win/SYNTHKEY-by-Piradex-$env:VERSAO-Windows-Manual.zip"
+          Get-ChildItem out-win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SYNTHKEY-Windows
+          path: |
+            out-win/*
+            pluginval-Windows.log
+
+  publicar:
+    needs: [macos, windows, testes-e-packs]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publicar versão (macOS + Windows + packs)
+        run: |
+          ls -la dist
+          TAG="v$VERSAO"
+          gh release delete "$TAG" -y --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          FICHEIROS=$(find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.zip' -o -name '*.bfpack' \))
+          echo "$FICHEIROS"
+          gh release create "$TAG" $FICHEIROS -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "SYNTHKEY by Piradex $VERSAO" \
+            --notes "macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."

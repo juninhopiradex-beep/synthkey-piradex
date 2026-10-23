@@ -1,0 +1,7 @@
+#!/bin/sh
+# Atualiza a cache de Audio Units para o DAW ver o plugin logo
+killall -9 AudioComponentRegistrar >/dev/null 2>&1
+# o Gatekeeper marca ficheiros descarregados; limpar para o DAW não bloquear o plugin
+xattr -cr "/Library/Audio/Plug-Ins/VST3/SYNTHKEY by Piradex.vst3" >/dev/null 2>&1
+xattr -cr "/Library/Audio/Plug-Ins/Components/SYNTHKEY by Piradex.component" >/dev/null 2>&1
+exit 0

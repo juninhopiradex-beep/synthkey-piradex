@@ -1,0 +1,15 @@
+# SEGREDOS — nunca no GitHub
+Source/Secrets.h
+PRIVADO_senhas_SYNTHKEY.txt
+secrets.b64
+.synthkey_secret_hex
+admin.key
+*.issued.json
+# build
+build/
+build-*/
+dist/
+*.o
+*.bfpack
+.DS_Store
+__pycache__/

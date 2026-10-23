@@ -1,0 +1,40 @@
+name: Gerar packs SYNTHKEY (.bfpack)
+
+# Segredo obrigatório: SYNTHKEY_SECRETS_B64 (o mesmo do repositório synthkey-piradex).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  packs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Teste do formato de pack
+        run: |
+          g++ -O2 -std=c++17 -ISource tests/test_packio.cpp -o test_packio
+          ./test_packio
+      - name: Injetar segredo
+        run: |
+          [ -n "$SYNTHKEY_SECRETS_B64" ] || { echo "Falta o segredo SYNTHKEY_SECRETS_B64"; exit 1; }
+          echo "$SYNTHKEY_SECRETS_B64" | base64 -d > Source/Secrets.h
+      - name: Gerar packs
+        run: |
+          g++ -O2 -std=c++17 -ISource tools/packgen.cpp -o packgen
+          ./packgen packs dist-packs Resources/covers -
+          ls -la dist-packs
+      - uses: actions/upload-artifact@v4
+        with: { name: packs, path: dist-packs/*.bfpack }
+      - name: Publicar packs na versão
+        run: |
+          TAG="packs-v1.0.0"
+          gh release delete "$TAG" -y --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" dist-packs/*.bfpack -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "SYNTHKEY — packs de samples 1.0.0" \
+            --notes "Um ficheiro .bfpack por estilo. Arraste para a janela do plugin (ou PACKS → INSTALAR). Ficam bloqueados até inserir a chave de cada pack."

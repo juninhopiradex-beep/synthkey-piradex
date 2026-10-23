@@ -1,0 +1,28 @@
+SYNTHKEY by Piradex — COMEÇAR AQUI (5 passos)
+=============================================
+
+O plugin para Mac e Windows é compilado no GitHub (como o ANALYSER). Não precisa de instalar nada no computador.
+
+1) No GitHub (conta juninhopiradex-beep) crie dois repositórios VAZIOS (sem README):
+      synthkey-piradex   (o plugin)
+      synthkey-samples   (opcional: só os packs de samples)
+
+2) Envie o conteúdo da pasta "synthkey-piradex" (este zip, descompactado) para o repositório synthkey-piradex
+   (no site: "Add file → Upload files", arraste tudo, incluindo a pasta escondida ".github").
+   ATENÇÃO: NÃO envie os ficheiros PRIVADO_senhas_SYNTHKEY.txt nem secrets.b64 (o .gitignore já os exclui).
+
+3) No repositório: Settings → Secrets and variables → Actions → "New repository secret"
+      Name : SYNTHKEY_SECRETS_B64
+      Secret: abra o ficheiro secrets.b64 (que recebeu à parte), copie TODO o texto e cole.
+
+4) Separador Actions → "Build SYNTHKEY by Piradex (macOS + Windows)" → Run workflow.
+   Demora ~25–40 minutos. No fim aparece em "Releases" (v1.0.0):
+      SYNTHKEY-by-Piradex-1.0.0-macOS.dmg                (Mac 10.13+ Intel e Apple Silicon — serve o seu Catalina)
+      SYNTHKEY-by-Piradex-1.0.0-Windows-Setup.exe        (Windows 10/11)
+      SYNTHKEY_Pack_<estilo>_1.0.0.bfpack                (um por estilo)
+
+5) Instale, abra o plugin no DAW e entre com a senha MASTER (ou BETA, válida até 01/11/2026).
+   As senhas e o ficheiro do administrador estão em PRIVADO_senhas_SYNTHKEY.txt — guarde-o num gestor de senhas.
+
+Sem o segredo do passo 3 o build falha de propósito (as senhas e o segredo das chaves nunca ficam no repositório).
+Se o workflow falhar, copie-me o erro que eu corrijo.

@@ -1,0 +1,21 @@
+﻿SYNTHKEY by Piradex — Windows 10 / 11 (64 bits)
+
+O instalador coloca:
+  Plugin VST3 : C:\Program Files\Common Files\VST3\SYNTHKEY by Piradex.vst3
+  Aplicação   : C:\Program Files\Piradex\SYNTHKEY\SYNTHKEY by Piradex.exe (versão independente)
+  Packs       : C:\ProgramData\Piradex\SYNTHKEY\Packs   (opcional)
+
+Depois de instalar:
+  1. Abra o DAW (Ableton, FL Studio, Cubase, Reaper, Studio One, Bitwig...).
+  2. Peça ao DAW para procurar plugins de novo, se não aparecer logo.
+  3. Procure "SYNTHKEY by Piradex" (fabricante: Piradex), como instrumento.
+  4. Na primeira vez que abrir o plugin, introduza a senha de acesso.
+  5. Para ativar um pack: separador PACKS → cartão do estilo → "Inserir chave".
+
+Se o Windows mostrar "O Windows protegeu o seu PC":
+  clique em "Mais informações" → "Executar mesmo assim".
+  (O instalador ainda não tem assinatura digital paga.)
+
+Instalação manual (sem instalador): copie a pasta "SYNTHKEY by Piradex.vst3"
+do ficheiro .zip para C:\Program Files\Common Files\VST3\ e os ficheiros .bfpack
+para C:\ProgramData\Piradex\SYNTHKEY\Packs (ou arraste um .bfpack para a janela do plugin).

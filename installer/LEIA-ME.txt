@@ -1,0 +1,26 @@
+SYNTHKEY by Piradex — instalação (macOS 10.13 ou superior, Intel e Apple Silicon)
+
+1) Abra o "SYNTHKEY by Piradex @VERSAO@.pkg".
+   Se o Mac disser que é de um "programador não identificado":
+   clique com o botão direito (ou Ctrl+clique) no .pkg → Abrir → Abrir.
+   (No macOS 13+: Definições do Sistema → Privacidade e Segurança → "Abrir na mesma".)
+
+2) Siga o instalador (pede a senha de administrador do Mac).
+   Deixe marcados os "Packs de samples" para já os ter instalados (ficam bloqueados até inserir a chave).
+
+3) Abra o DAW e procure "SYNTHKEY by Piradex" (fabricante: Piradex), como instrumento.
+   Se não aparecer, peça ao DAW para procurar plugins de novo
+   (Logic: Gestor de Plug-ins → Restaurar e voltar a analisar).
+
+4) Na primeira vez que abrir o plugin, introduza a senha de acesso.
+
+5) Para ativar um pack: separador PACKS → cartão do estilo → "Inserir chave".
+
+Instalação manual (sem o .pkg): copie
+  Plugins/*.vst3        para /Library/Audio/Plug-Ins/VST3
+  Plugins/*.component   para /Library/Audio/Plug-Ins/Components
+  Packs/*.bfpack        para /Library/Application Support/Piradex/SYNTHKEY/Packs
+  (ou arraste um .bfpack para a janela do plugin)
+e no Terminal:
+  sudo xattr -cr "/Library/Audio/Plug-Ins/VST3/SYNTHKEY by Piradex.vst3"
+  sudo xattr -cr "/Library/Audio/Plug-Ins/Components/SYNTHKEY by Piradex.component"
