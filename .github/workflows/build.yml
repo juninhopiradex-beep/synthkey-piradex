@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSAO: "1.5.0"
+  VERSAO: "1.5.1"
 
 jobs:
   testes-e-packs:

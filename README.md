@@ -15,8 +15,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.5.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.5.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.5.1-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.5.1-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.2.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
@@ -70,6 +70,10 @@ a ativação online está prevista para a v1.1.
 ## v1.1.1
 
 * **Arpejador:** o padrão de 16 passos agora é editável — arrasta as barras (em baixo = pausa), clica no número para mudar a oitava, botão direito para repetir a nota ×2/×3, e escolhe quantos passos (1–16).
+
+## v1.5.1
+
+* Barra de navegação de baixo mais visível: texto mais claro, separador ativo em pílula colorida com brilho, barra com linha de realce.
 
 ## v1.5.0 — loops no tempo, MIDI/WAV para a DAW, WAV → MIDI
 

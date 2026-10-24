@@ -196,7 +196,7 @@ public:
             g.setColour (theme::stroke()); g.drawVerticalLine (546, 534.0f, 626.0f);
         }
         // ---- navegação
-        g.setColour (juce::Colour (0xFF0D0D12)); g.fillRect (0, 730, 1180, 28); g.setColour (juce::Colour (0xFF22222B)); g.drawHorizontalLine (730, 0.0f, 1180.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xFF1B1B2B), 0, 730.0f, juce::Colour (0xFF0D0D14), 0, 758.0f, false)); g.fillRect (0, 730, 1180, 28); g.setColour (theme::accent().withAlpha (0.45f)); g.drawHorizontalLine (730, 0.0f, 1180.0f);
         g.setColour (theme::dim()); g.setFont (theme::font (10.0f, true));
         g.drawText (juce::String (proc.voiceCount.load()) + (proc.voiceCount.load() == 1 ? " VOZ" : " VOZES"), 800, 731, 90, 26, juce::Justification::centredRight);
         if (AccessManager::get().isUnlocked())

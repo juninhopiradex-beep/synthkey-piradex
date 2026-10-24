@@ -115,13 +115,18 @@ class NavBtn : public juce::Button
 {
 public:
     explicit NavBtn (const juce::String& t) : juce::Button (t) { setClickingTogglesState (false); setMouseCursor (juce::MouseCursor::PointingHandCursor); }
-    void paintButton (juce::Graphics& g, bool hover, bool) override
+    void paintButton (juce::Graphics& g, bool hover, bool down) override
     {
-        const bool on = getToggleState(); auto r = getLocalBounds().toFloat();
-        if (on) { g.setGradientFill (juce::ColourGradient (theme::accent().withAlpha (0.20f), 0, 0, juce::Colours::transparentBlack, 0, r.getHeight(), false)); g.fillRect (r); }
-        g.setFont (theme::font (11.5f, true)); g.setColour (on ? theme::accent().brighter (0.5f) : (hover ? theme::text() : theme::dim()));
+        const bool on = getToggleState(); auto r = getLocalBounds().toFloat(); auto pill = r.reduced (3.0f, 2.0f);
+        if (on)
+        {
+            g.setGradientFill (juce::ColourGradient (theme::accent().brighter (0.15f).withAlpha (0.95f), 0, pill.getY(), theme::accent2().withAlpha (0.55f), 0, pill.getBottom(), false)); g.fillRoundedRectangle (pill, 7.0f);
+            g.setColour (theme::accent().brighter (0.3f).withAlpha (0.9f)); g.drawRoundedRectangle (pill.reduced (0.5f), 7.0f, 1.2f);
+        }
+        else if (hover || down) { g.setColour (theme::accent().withAlpha (down ? 0.28f : 0.16f)); g.fillRoundedRectangle (pill, 7.0f); }
+        g.setFont (theme::font (13.0f, true)); g.setColour (on ? juce::Colours::white : (hover ? juce::Colours::white : theme::text().withAlpha (0.95f)));
         g.drawText (getButtonText(), r.toNearestInt(), juce::Justification::centred);
-        if (on) { juce::Path p; p.startNewSubPath (r.getX() + 12, 1.0f); p.lineTo (r.getRight() - 12, 1.0f); theme::glowStroke (g, p, theme::accent(), 2.0f); }
+        if (on) { juce::Path p; p.startNewSubPath (r.getX() + 14, 1.5f); p.lineTo (r.getRight() - 14, 1.5f); theme::glowStroke (g, p, theme::accent().brighter (0.4f), 3.0f); }
     }
 };
 
