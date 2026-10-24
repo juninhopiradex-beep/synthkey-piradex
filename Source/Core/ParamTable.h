@@ -127,6 +127,11 @@ inline constexpr int kNumDivs = 16;
     X(MOD##n##_DST, "mod" #n "_dst", "Mod " #n " Destino", PK_CHOICE, 0, 35, 0, "", "@MODDST") \
     X(MOD##n##_AMT, "mod" #n "_amt", "Mod " #n " Quantidade", PK_FLOAT, -1, 1, 0, "%", "")
 
+#define SK_ARPSTEP(X, n) \
+    X(ARP_V##n, "arp_v" #n, "Arp Passo " #n " Nível",     PK_FLOAT, 0, 1, 1, "%", "") \
+    X(ARP_O##n, "arp_o" #n, "Arp Passo " #n " Oitava",    PK_INT,  -1, 1, 0, "", "") \
+    X(ARP_R##n, "arp_r" #n, "Arp Passo " #n " Repetições", PK_INT,   0, 2, 0, "", "")
+
 #define SK_FXSLOT(X, E, id, NM) \
     X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 10, 0, "", SK_FXTYPES) \
     X(E##_P1,   id "_p1",   "FX " NM " Param 1", PK_FLOAT, 0, 1, 0.5f, "", "") \
@@ -202,7 +207,12 @@ inline constexpr int kNumDivs = 16;
     X(INSB_LEVEL, "insb_level", "Insert B Nível", PK_FLOAT, -60, 6, 0, "dB", "") \
     X(SEND_A,     "send_a",     "Send A para Aux", PK_FLOAT, 0, 1, 0, "%", "") \
     X(SEND_B,     "send_b",     "Send B para Aux", PK_FLOAT, 0, 1, 0, "%", "") \
-    X(AUX_RETURN, "aux_return", "Retorno Aux", PK_FLOAT, -60, 6, 0, "dB", "")
+    X(AUX_RETURN, "aux_return", "Retorno Aux", PK_FLOAT, -60, 6, 0, "dB", "") \
+    /* padrão do arpejador editável (16 passos: nível 0 = pausa, oitava -1/0/+1, repetições 0/×2/×3) */ \
+    X(ARP_EDIT, "arp_edit", "Arp Padrão Próprio", PK_BOOL, 0, 1, 0, "", "") \
+    X(ARP_LEN,  "arp_len",  "Arp Passos", PK_INT, 1, 16, 16, "", "") \
+    SK_ARPSTEP(X, 1) SK_ARPSTEP(X, 2) SK_ARPSTEP(X, 3) SK_ARPSTEP(X, 4) SK_ARPSTEP(X, 5) SK_ARPSTEP(X, 6) SK_ARPSTEP(X, 7) SK_ARPSTEP(X, 8) \
+    SK_ARPSTEP(X, 9) SK_ARPSTEP(X, 10) SK_ARPSTEP(X, 11) SK_ARPSTEP(X, 12) SK_ARPSTEP(X, 13) SK_ARPSTEP(X, 14) SK_ARPSTEP(X, 15) SK_ARPSTEP(X, 16)
 
 // --------------------------------- enum + tabela --------------------------------
 #define SK_ENUM_ROW(E, id, name, kind, mn, mx, def, unit, choices) P_##E,

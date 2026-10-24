@@ -17,8 +17,8 @@ O plugin para Mac e Windows é compilado no GitHub (como o ANALYSER). Não preci
 
 4) Separador Actions → "Build SYNTHKEY by Piradex (macOS + Windows)" → Run workflow.
    Demora ~25–40 minutos. No fim aparece em "Releases" (v1.1.0):
-      SYNTHKEY-by-Piradex-1.1.0-macOS.dmg                (Mac 10.13+ Intel e Apple Silicon — serve o seu Catalina)
-      SYNTHKEY-by-Piradex-1.1.0-Windows-Setup.exe        (Windows 10/11)
+      SYNTHKEY-by-Piradex-1.1.1-macOS.dmg                (Mac 10.13+ Intel e Apple Silicon — serve o seu Catalina)
+      SYNTHKEY-by-Piradex-1.1.1-Windows-Setup.exe        (Windows 10/11)
       SYNTHKEY_Pack_<estilo>_1.1.0.bfpack                (um por estilo)
 
 5) Instale, abra o plugin no DAW e entre com a senha MASTER (ou BETA, válida até 01/11/2026).

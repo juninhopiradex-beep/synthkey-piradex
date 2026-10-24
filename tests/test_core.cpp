@@ -195,6 +195,17 @@ int main()
             int cnt = 0; for (int b = 0; b < 400; ++b) { f2.process (512, 120.0, 0, false, ev); for (auto& e : ev) if (e.on) ++cnt; }
             CHECK (cnt > 4, "padrão %d: só %d notas", pat, cnt);
         }
+        // padrão próprio: 4 passos [cheio, pausa, cheio +8, pausa] com 1 nota
+        {
+            defaults(); P[P_ARP_ON] = 1; P[P_ARP_RATE] = 12; P[P_ARP_EDIT] = 1; P[P_ARP_LEN] = 4;
+            for (int i = 0; i < 16; ++i) { P[P_ARP_V1 + 3 * i] = (i % 2 == 0) ? 1.0f : 0.0f; P[P_ARP_V1 + 3 * i + 1] = (i == 2) ? 1.0f : 0.0f; P[P_ARP_V1 + 3 * i + 2] = 0; }
+            MidiFx f3; f3.prepare (SR); f3.setParams (P); f3.noteOn (60, 1, 0);
+            std::vector<int> notes, offs; int64_t tt = 0;
+            for (int b = 0; b < 400; ++b) { f3.process (512, 120.0, 0, false, ev); for (auto& e : ev) if (e.on) { notes.push_back (e.note); offs.push_back ((int) (tt + e.offset)); } tt += 512; }
+            CHECK (notes.size() >= 8, "padrão próprio: %zu notas", notes.size());
+            if (notes.size() >= 4) { CHECK (notes[0] == 60 && notes[1] == 72 && notes[2] == 60 && notes[3] == 72, "padrão próprio: %d %d %d %d", notes[0], notes[1], notes[2], notes[3]);
+                                     CHECK (std::abs ((offs[1] - offs[0]) - 12000) <= 2, "padrão próprio: pausa entre notas = %d (esperado 12000)", offs[1] - offs[0]); }
+        }
     }
 
     // ---------------------------------------------------------------- samples e packs

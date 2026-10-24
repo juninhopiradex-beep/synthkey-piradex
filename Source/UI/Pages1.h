@@ -317,18 +317,29 @@ private:
 class PatternView : public juce::Component
 {
 public:
-    explicit PatternView (SynthKeyProcessor& p) : proc (p) { setInterceptsMouseClicks (false, false); }
+    explicit PatternView (SynthKeyProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); }
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (10.0f, 8.0f);
-        g.setColour (theme::dim()); g.setFont (theme::font (11.0f)); g.drawText (TX ("PADR\xC3\x83O  \xC2\xB7  16 passos"), r.removeFromTop (16).toNearestInt(), juce::Justification::centredLeft);
+        const bool edit = proc.getReal (P_ARP_EDIT) > 0.5f; const int len = edit ? juce::jlimit (1, 16, (int) proc.getReal (P_ARP_LEN)) : 16;
+        g.setColour (theme::dim()); g.setFont (theme::font (11.0f));
+        g.drawText (TX (edit ? "PADR\xC3\x83O PR\xC3\x93PRIO  \xC2\xB7  " : "PADR\xC3\x83O  \xC2\xB7  ") + juce::String (len) + " passos", r.removeFromTop (16).toNearestInt(), juce::Justification::centredLeft);
+        g.drawText (TX ("arrasta as barras (em baixo = pausa)  \xC2\xB7  clica no n\xC3\xBAmero = oitava  \xC2\xB7  bot\xC3\xA3o direito = repetir nota"), getLocalBounds().withTrimmedRight (14).withHeight (28), juce::Justification::centredRight);
         const int pi = juce::jlimit (0, 7, (int) proc.getReal (P_ARP_PATTERN)); const auto& pat = kArpPatterns[pi];
-        const float cw = r.getWidth() / 16.0f, H = r.getHeight() - 14.0f;
+        barArea = r; cw = r.getWidth() / 16.0f; H = r.getHeight() - 14.0f;
         for (int i = 0; i < 16; ++i)
         {
-            const auto& st = pat.s[i % pat.len]; auto cell = juce::Rectangle<float> (r.getX() + cw * (float) i + 3, r.getY(), cw - 6, H);
-            g.setColour (juce::Colour (0xFF11142A)); g.fillRoundedRectangle (cell, 5.0f);
-            if (st.flags & AF_REST) { g.setColour (theme::dim().withAlpha (0.35f)); g.fillRect (cell.getX() + 4, cell.getBottom() - 6, cell.getWidth() - 8, 2.0f); }
+            ArpStep st = pat.s[i % pat.len];
+            if (edit)
+            {
+                const int b = P_ARP_V1 + 3 * i; st.vel = proc.getReal (b); st.gate = 1.0f; st.oct = (int8_t) std::lround (proc.getReal (b + 1));
+                const int rr = (int) std::lround (proc.getReal (b + 2)); st.flags = st.vel < 0.02f ? AF_REST : (rr >= 2 ? AF_R3 : (rr == 1 ? AF_R2 : 0));
+            }
+            const bool off = edit && i >= len;
+            auto cell = juce::Rectangle<float> (r.getX() + cw * (float) i + 3, r.getY(), cw - 6, H);
+            g.setColour (juce::Colour (off ? 0xFF0B0D1B : 0xFF11142A)); g.fillRoundedRectangle (cell, 5.0f);
+            if (off) { g.setColour (theme::dim().withAlpha (0.25f)); g.fillRect (cell.getX() + 4, cell.getBottom() - 6, cell.getWidth() - 8, 2.0f); }
+            else if (st.flags & AF_REST) { g.setColour (theme::dim().withAlpha (0.35f)); g.fillRect (cell.getX() + 4, cell.getBottom() - 6, cell.getWidth() - 8, 2.0f); }
             else if (st.flags & AF_TIE) { g.setColour (theme::accent2().withAlpha (0.8f)); g.fillRoundedRectangle (cell.withTop (cell.getBottom() - 10).reduced (2, 0), 3.0f); }
             else
             {
@@ -337,11 +348,53 @@ public:
                 if (st.oct != 0) { g.setColour (juce::Colours::white); g.setFont (theme::font (10.0f, true)); g.drawText (st.oct > 0 ? "+8" : "-8", cell.toNearestInt().withHeight (14), juce::Justification::centred); }
                 if (st.flags & (AF_R2 | AF_R3)) { g.setColour (juce::Colours::white.withAlpha (0.9f)); g.setFont (theme::font (10.0f, true)); g.drawText ((st.flags & AF_R3) ? "x3" : "x2", cell.toNearestInt().withTrimmedTop ((int) H - 14), juce::Justification::centred); }
             }
-            g.setColour (theme::dim().withAlpha (0.7f)); g.setFont (theme::font (9.5f)); g.drawText (juce::String (i + 1), (int) cell.getX(), (int) (cell.getBottom() + 1), (int) cell.getWidth(), 12, juce::Justification::centred);
+            g.setColour (off ? theme::dim().withAlpha (0.3f) : theme::dim().withAlpha (0.7f)); g.setFont (theme::font (9.5f)); g.drawText (juce::String (i + 1), (int) cell.getX(), (int) (cell.getBottom() + 1), (int) cell.getWidth(), 12, juce::Justification::centred);
         }
     }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const int i = columnAt (e.position.x); if (i < 0) return;
+        if (proc.getReal (P_ARP_EDIT) > 0.5f && i >= juce::jlimit (1, 16, (int) proc.getReal (P_ARP_LEN))) return;
+        const bool onLabel = e.position.y > barArea.getY() + H + 2.0f;
+        ensureEditable();
+        const int b = P_ARP_V1 + 3 * i;
+        if (e.mods.isPopupMenu())                     // botão direito: repetições 0 -> x2 -> x3
+        { proc.setReal (b + 2, (float) (((int) std::lround (proc.getReal (b + 2)) + 1) % 3)); if (proc.getReal (b) < 0.02f) proc.setReal (b, 0.7f); }
+        else if (onLabel)                             // número: oitava 0 -> +8 -> -8
+        { const int o = (int) std::lround (proc.getReal (b + 1)); proc.setReal (b + 1, (float) (o == 0 ? 1 : (o == 1 ? -1 : 0))); if (proc.getReal (b) < 0.02f) proc.setReal (b, 0.7f); }
+        else setLevel (i, e.position.y);
+        repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() || e.mouseDownPosition.y > barArea.getY() + H + 2.0f) return;
+        const int i = columnAt (e.position.x); if (i < 0) return;
+        if (i >= juce::jlimit (1, 16, (int) proc.getReal (P_ARP_LEN))) return;
+        setLevel (i, e.position.y); repaint();
+    }
 private:
-    SynthKeyProcessor& proc;
+    int columnAt (float x) const { const int i = (int) std::floor ((x - barArea.getX()) / cw); return i >= 0 && i < 16 ? i : -1; }
+    void setLevel (int i, float y)
+    {
+        float v = 1.0f - (y - barArea.getY()) / std::max (1.0f, H); v = juce::jlimit (0.0f, 1.0f, v);
+        v = v < 0.06f ? 0.0f : std::round (v * 20.0f) / 20.0f;         // em baixo = pausa; senão passos de 5 %
+        proc.setReal (P_ARP_V1 + 3 * i, v);
+    }
+    // na primeira edição copia o padrão de fábrica para os 16 passos e liga o "padrão próprio"
+    void ensureEditable()
+    {
+        if (proc.getReal (P_ARP_EDIT) > 0.5f) return;
+        const auto& pat = kArpPatterns[juce::jlimit (0, 7, (int) proc.getReal (P_ARP_PATTERN))];
+        for (int i = 0; i < 16; ++i)
+        {
+            const auto& st = pat.s[i % pat.len]; const int b = P_ARP_V1 + 3 * i;
+            const bool rest = (st.flags & (AF_REST | AF_TIE)) != 0;
+            proc.setReal (b, rest ? 0.0f : std::max (0.1f, st.vel)); proc.setReal (b + 1, (float) st.oct);
+            proc.setReal (b + 2, (st.flags & AF_R3) ? 2.0f : ((st.flags & AF_R2) ? 1.0f : 0.0f));
+        }
+        proc.setReal (P_ARP_LEN, (float) (pat.len >= 16 ? 16 : (pat.len == 8 ? 8 : 16))); proc.setReal (P_ARP_EDIT, 1.0f);
+    }
+    SynthKeyProcessor& proc; juce::Rectangle<float> barArea; float cw = 60.0f, H = 100.0f;
 };
 
 class ArpPage : public Page
@@ -354,12 +407,14 @@ public:
         a->newRow(); C (a, P_SCALE_KEY, 110); C (a, P_SCALE_TYPE, 190);
         auto* b = addSection ("ARPEJADOR", { 388, 0, 768, 222 });
         T (b, P_ARP_ON, "LIGADO", 90); C (b, P_ARP_MODE, 150); C (b, P_ARP_RATE, 80); C (b, P_ARP_PATTERN, 190); T (b, P_ARP_LATCH, "LATCH", 80, 2);
-        b->newRow(); K (b, P_ARP_GATE, "GATE"); K (b, P_ARP_OCT, "OITAVAS"); K (b, P_ARP_SWING, "SWING");
+        b->newRow(); K (b, P_ARP_GATE, "GATE"); K (b, P_ARP_OCT, "OITAVAS"); K (b, P_ARP_SWING, "SWING"); K (b, P_ARP_LEN, "PASSOS");
+        T (b, P_ARP_EDIT, TX ("PADR\xC3\x83O PR\xC3\x93PRIO"), 170, 1, {}, 20);
         pattern = new PatternView (proc); addAndMakeVisible (pattern); pattern->setBounds (0, 230, 1156, 222);
         setMode (2);
     }
     ~ArpPage() override { delete pattern; }
     void paint (juce::Graphics& g) override { theme::drawCard (g, pattern->getBounds().toFloat()); }
+    void tick() override { Page::tick(); pattern->repaint(); }
 private:
     PatternView* pattern = nullptr;
 };

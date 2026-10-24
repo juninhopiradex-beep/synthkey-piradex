@@ -267,7 +267,16 @@ private:
             lastStepIdx = idx;
             int64_t at = absPos + (int64_t) std::ceil (std::max (0.0, offD));
             if (idx & 1) at += (int64_t) (swing * 0.66 * stepLen);
-            const ArpStep& st = ap.s[stepCounter % ap.len];
+            ArpStep custom { 0, 1.0f, 1.0f, 0 }; const ArpStep* stp;
+            if (prm[P_ARP_EDIT] > 0.5f)      // padrão desenhado pelo utilizador
+            {
+                const int clen = std::min (16, std::max (1, (int) prm[P_ARP_LEN])), ci = (int) (stepCounter % clen), b = P_ARP_V1 + 3 * ci;
+                custom.vel = prm[b]; custom.oct = (int8_t) std::min (1, std::max (-1, (int) std::lround (prm[b + 1])));
+                const int rr = (int) std::lround (prm[b + 2]); custom.flags = custom.vel < 0.02f ? AF_REST : (rr >= 2 ? AF_R3 : (rr == 1 ? AF_R2 : 0));
+                stp = &custom;
+            }
+            else stp = &ap.s[stepCounter % ap.len];
+            const ArpStep& st = *stp;
             ++stepCounter;
             if (st.flags & AF_REST) continue;
             if (st.flags & AF_TIE)
