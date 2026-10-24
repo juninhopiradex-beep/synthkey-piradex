@@ -83,7 +83,7 @@ juce::AudioProcessorEditor* SynthKeyProcessor::createEditor() { return new Synth
 void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     grooveEvs.reserve (1024); groove.stop();
-    sr = sampleRate; engineMax = std::max (512, samplesPerBlock);
+    sr = sampleRate; engineMax = std::max (512, samplesPerBlock); uiMidi.reset (sampleRate);
     engine->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0);
     engine->prepare (sampleRate, engineMax); midiFx.prepare ((float) sampleRate);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
@@ -101,6 +101,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const int n = buffer.getNumSamples();
     buffer.clear();
     keyboardState.processNextMidiBuffer (midi, 0, n, true);
+    uiMidi.removeNextBlockOfMessages (midi, n);
     if (! AccessManager::get().isUnlocked()) { midi.clear(); voiceCount.store (0); return; }
 
     for (int i = 0; i < P_COUNT; ++i) prm[i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;

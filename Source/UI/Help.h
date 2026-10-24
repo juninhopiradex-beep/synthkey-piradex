@@ -1,5 +1,5 @@
 // =============================================================================
-//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.2)
+//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.3)
 // =============================================================================
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -8,7 +8,7 @@
 
 namespace ui
 {
-inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v12.seen"); }
+inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v13.seen"); }
 
 class HelpOverlay : public juce::Component
 {
@@ -26,17 +26,17 @@ public:
     {
         struct Item { const char* head; const char* body; };
         static const Item items[] = {
-            { "\xE2\x9C\xA6 DESCREVER SOM",   "Escreve o que queres \xE2\x80\x94 \"baixo escuro e agressivo\", \"pad quente e largo\", \"pluck brilhante curto\", \"808 drill\", \"amapiano log drum\" \xE2\x80\x94 e o SYNTHKEY monta um preset. Carrega outra vez para variantes." },
-            { "ARRASTAR PARA MODULAR",        "Pega numa origem da faixa (LFO, envelope, SEQ, DESENHO...) e larga-a em cima de qualquer potenci\xC3\xB3metro. Aparece um anel com a amplitude; afina na MATRIZ." },
-            { "MODULAD.",                     "Sequenciador de passos, LFO desenhado \xC3\xA0 m\xC3\xA3o e envelope multi-ponto. Clica e arrasta para desenhar. MPE e aftertouch por nota j\xC3\xA1 est\xC3\xA3o ligados." },
+            { "\xE2\x9C\xA6 DESCREVER SOM",   "Escreve o que queres \xE2\x80\x94 \"baixo escuro e agressivo\", \"pad quente e largo\", \"pluck brilhante curto\", \"808 drill\" \xE2\x80\x94 no bot\xC3\xA3o-orbe da barra de cima e o SYNTHKEY monta um preset. Carrega outra vez para variantes." },
+            { "ECR\xC3\x83 SOM (ORBIT)",       "Tudo numa vista: origens \xC3\xA0 esquerda, oscilador (separadores A, B, SUB + RU\xC3\x8D" "DO, VOZES), filtros, volume, efeitos e arpejador ao centro, matriz e macros \xC3\xA0 direita. O orbe mostra o espectro e a onda em tempo real." },
+            { "ARRASTAR PARA MODULAR",        "Pega numa origem (LFO, envelope, STEP, DESENHO...) e larga-a em cima de qualquer potenci\xC3\xB3metro: aparece um anel com a amplitude. As origens em uso ficam iluminadas." },
+            { "MATRIZ COMPACTA",              "Clica na origem ou no destino de uma linha para escolher; arrasta a barra para a quantidade (duplo clique = 0, bot\xC3\xA3o direito = limpar a linha). A lista completa (16) est\xC3\xA1 no separador MATRIZ." },
+            { "TECLADO DE PERFORMANCE",       "Cada nota tem a sua cor e a dica mostra nome, frequ\xC3\xAAncia e velocidade. Clica mais abaixo na tecla para tocar mais forte. As rodas PITCH (volta ao centro) e MOD enviam MIDI." },
             { "IMPORTAR WAV",                 "No oscilador, bot\xC3\xA3o WAV: cria uma wavetable a partir de qualquer ficheiro. Arrasta um \xC3\xA1udio para a janela para o usares como instrumento (pack \"Utilizador\")." },
-            { "ANULAR / REFAZER",             "Ctrl/Cmd+Z e Ctrl/Cmd+Shift+Z (ou menu \xE2\x8B\xAF) desfazem qualquer altera\xC3\xA7\xC3\xA3o de som." },
-            { "QUALIDADE",                    "Normal, Alta (2x) ou M\xC3\xA1xima (4x) em SOM \xE2\x86\x92 Qualidade: menos aliasing, mais CPU. Filtro Formante e Delay sincronizado ao tempo do anfitri\xC3\xA3o." },
-            { "GUARDAR COM ETIQUETAS",        "Menu \xE2\x8B\xAF \xE2\x86\x92 Guardar preset: escreve o nome e, depois de #, as etiquetas (ex.: Meu Lead #lead, brilhante). Pesquisa-as no navegador de presets." } };
+            { "ANULAR / REFAZER",             "Setas na barra de cima, ou Ctrl/Cmd+Z e Ctrl/Cmd+Shift+Z. No menu \xE2\x8B\xAF: guardar preset com etiquetas (Meu Lead #lead, brilhante), aleatorizar, ajuda." } };
         g.fillAll (juce::Colour (0xD0050610));
         theme::drawCard (g, card.toFloat(), 16.0f, true);
         g.setColour (theme::accent()); g.fillRoundedRectangle ((float) card.getX() + 24, (float) card.getY() + 26, 3.0f, 20.0f, 1.5f);
-        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.2"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
+        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.3"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
         int y = card.getY() + 66;
         for (auto& it : items)
         {

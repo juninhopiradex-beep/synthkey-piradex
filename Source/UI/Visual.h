@@ -15,9 +15,12 @@ class VizPanel : public juce::Component
 public:
     explicit VizPanel (const juce::String& t) : title (t) {}
     virtual void update() { repaint(); }
+    void setBare (bool b) { bare = b; repaint(); }       // sem cartão nem título (usado dentro dos cartões do ecrã SOM)
 protected:
+    bool bare = false;
     juce::Rectangle<float> frame (juce::Graphics& g) const
     {
+        if (bare) return getLocalBounds().toFloat();
         theme::drawCard (g, getLocalBounds().toFloat());
         g.setColour (theme::dim()); g.setFont (theme::font (11.5f, true)); g.drawText (title, 14, 8, getWidth() - 28, 16, juce::Justification::centredLeft);
         return getLocalBounds().toFloat().withTrimmedTop (30.0f).reduced (12.0f, 6.0f).withTrimmedBottom (4.0f);
@@ -195,6 +198,17 @@ public:
             g.setColour (c.withAlpha (0.8f)); g.drawVerticalLine ((int) x, r.getY() + 14, r.getBottom()); g.fillEllipse (x - 3.5f, r.getY() + 10.5f, 7.0f, 7.0f);
             g.setFont (theme::font (10.5f, true)); g.drawText (lbl, (int) x - 20, (int) r.getY() - 2, 40, 12, juce::Justification::centred);
         };
+        // zona de modulação do corte (o que a matriz faz ao corte de cada filtro)
+        auto band = [&] (int t, int cutIdx, juce::Colour c)
+        {
+            float lo = 0, hi = 0; if (t <= 0 || ! modRangeFor (proc, cutIdx, lo, hi)) return;
+            const auto& pi = kParams[cutIdx]; const float cut = proc.getReal (cutIdx), prop = std::log (cut / pi.mn) / std::log (pi.mx / pi.mn);
+            auto fx = [&] (float pr) { const float f = pi.mn * std::pow (pi.mx / pi.mn, juce::jlimit (0.0f, 1.0f, pr)); return r.getX() + r.getWidth() * std::log10 (f / 20.0f) / 3.0f; };
+            const float x0 = fx (prop + lo), x1 = fx (prop + hi); if (x1 - x0 < 1.5f) return;
+            g.setColour (c.withAlpha (0.20f)); g.fillRect (x0, r.getY(), x1 - x0, r.getHeight());
+            g.setColour (c.withAlpha (0.75f)); g.fillRect (x0, r.getBottom() - 3.0f, x1 - x0, 3.0f);
+        };
+        band (t1, P_F1_CUT, theme::accent()); band (t2, P_F2_CUT, theme::accent2());
         mark (t1, c1, theme::accent(), "F1"); mark (t2, c2, theme::accent2(), "F2");
         if (t1 <= 0 && t2 <= 0) { g.setColour (theme::dim()); g.setFont (theme::font (12.0f)); g.drawText ("Filtros desligados", r.toNearestInt(), juce::Justification::centred); }
     }

@@ -9,7 +9,8 @@ inline juce::String TX (const char* utf8) { return juce::String::fromUTF8 (utf8)
 namespace theme
 {
 struct Palette { const char* name; juce::uint32 accent, accent2; };
-inline const Palette kPalettes[5] = {
+inline const Palette kPalettes[6] = {
+    { "ORBIT",   0xFFA58BFF, 0xFF5FE0FF },
     { "CIANO",   0xFF3DF2FF, 0xFF7B5CFF },
     { "MAGENTA", 0xFFFF4FD8, 0xFF8A5CFF },
     { "\xC3\x82MBAR", 0xFFFFB547, 0xFFFF5E7A },
@@ -19,9 +20,9 @@ inline const Palette kPalettes[5] = {
 inline int& paletteIndex() { static int i = 0; return i; }
 inline juce::Colour accent()  { return juce::Colour (kPalettes[paletteIndex()].accent); }
 inline juce::Colour accent2() { return juce::Colour (kPalettes[paletteIndex()].accent2); }
-inline juce::Colour bg()      { return juce::Colour (0xFF07080F); }
-inline juce::Colour panel()   { return juce::Colour (0xCC10121E); }
-inline juce::Colour panelHi() { return juce::Colour (0xE61A1D2E); }
+inline juce::Colour bg()      { return juce::Colour (0xFF0A0A10); }
+inline juce::Colour panel()   { return juce::Colour (0xF2121219); }
+inline juce::Colour panelHi() { return juce::Colour (0xF21A1A26); }
 inline juce::Colour stroke()  { return juce::Colour (0x24FFFFFF); }
 inline juce::Colour text()    { return juce::Colour (0xFFE8ECF8); }
 inline juce::Colour dim()     { return juce::Colour (0xFF8A91AB); }

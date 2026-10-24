@@ -15,8 +15,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.2.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.2.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.3.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.3.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.1.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
@@ -70,6 +70,21 @@ a ativação online está prevista para a v1.1.
 ## v1.1.1
 
 * **Arpejador:** o padrão de 16 passos agora é editável — arrasta as barras (em baixo = pausa), clica no número para mudar a oitava, botão direito para repetir a nota ×2/×3, e escolhe quantos passos (1–16).
+
+## v1.3.0 — interface "Orbit"
+
+* **Novo ecrã SOM numa só vista:** origens de modulação à esquerda (LFO 1/2, ENV 2, STEP, DESENHO, ENV MULTI + velocidade,
+  tecla, pressão…, com mini-gráficos reais e destaque das que estão em uso), oscilador com o **orbe** (espectro radial em tempo
+  real + forma de onda + anéis de posição/modulação) e separadores A · B · SUB+RUÍDO · VOZES, filtros com curva e zona de
+  modulação do corte, volume, resumo dos efeitos, arpejador em miniatura, **matriz compacta** (clica para escolher origem/destino,
+  arrasta a barra) e macros.
+* **Teclado de performance:** cada nota tem a sua cor, mostra a velocidade (clica mais abaixo na tecla = mais forte), ponto
+  luminoso nas notas premidas e dica com nome, frequência e velocidade. Rodas de **PITCH** e **MOD** que enviam MIDI.
+* **Barra de cima nova:** anular/refazer, navegação de presets com etiqueta da categoria, botão-orbe **✦ Descrever som…**,
+  ajuda, modos Fácil/Avançado/Expert e paletas (nova paleta **ORBIT** violeta/ciano por defeito).
+* **Navegação em baixo** (SOM · MATRIZ · MODULAD. · EFEITOS · ARP · VISUAL · GROOVES · PACKS); nos outros separadores as macros,
+  o volume e as origens ficam numa faixa por cima do teclado.
+* Mesmo motor de som e mesmos presets da 1.2 (nenhum parâmetro mudou).
 
 ## v1.2.0
 

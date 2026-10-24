@@ -149,7 +149,7 @@ public:
     void setMode (int m) { mode = m; relayout(); }
     void setAccent (juce::Colour c, bool use) { accentOverride = c; useOverride = use; repaint(); }
     juce::String title;
-    int titleH = 26;
+    int titleH = 26, insetLeft = 0, insetRight = 0; bool dotTitle = true, bare = false;
 
     // devolve a "assinatura" de visibilidade para detetar mudanças que exijam novo layout
     int visibilitySignature() const
@@ -160,24 +160,27 @@ public:
     }
     void relayout()
     {
-        const int pad = 8, gap = 4; int x = pad, y = titleH, rowH = 0;
+        const int pad = 8 + insetLeft, gap = 4; int x = pad, y = titleH, rowH = 0;
         for (auto& it : items)
         {
             if (! isShown (it)) { it.comp->setVisible (false); continue; }
             it.comp->setVisible (true);
-            if ((it.breakBefore && x > pad) || x + it.w > getWidth() - pad + 1) { y += rowH + gap; x = pad; rowH = 0; }
-            const int w = it.grow ? getWidth() - pad - x : it.w;
+            if ((it.breakBefore && x > pad) || x + it.w > getWidth() - 8 - insetRight + 1) { y += rowH + gap; x = pad; rowH = 0; }
+            const int w = it.grow ? getWidth() - 8 - insetRight - x : it.w;
             it.comp->setBounds (x, y + it.yoff, w, it.h); x += w + gap; rowH = std::max (rowH, it.h);
         }
     }
     void resized() override { relayout(); }
     void paint (juce::Graphics& g) override
     {
+        if (bare) return;
         auto r = getLocalBounds().toFloat();
         theme::drawCard (g, r);
         const auto c = useOverride ? accentOverride : theme::accent();
-        g.setColour (c); g.fillRoundedRectangle (10.0f, 9.0f, 3.0f, 12.0f, 1.5f);
-        g.setFont (theme::font (11.5f, true)); g.setColour (theme::text().withAlpha (0.9f)); g.drawText (title, 18, 5, getWidth() - 24, 20, juce::Justification::centredLeft);
+        if (title.isEmpty()) return;
+        if (dotTitle) { g.setColour (c.withAlpha (0.25f)); g.fillEllipse (11.0f, 10.0f, 11.0f, 11.0f); g.setColour (c); g.fillEllipse (13.5f, 12.5f, 6.0f, 6.0f); }
+        else { g.setColour (c); g.fillRoundedRectangle (10.0f, 9.0f, 3.0f, 12.0f, 1.5f); }
+        g.setFont (theme::font (10.5f, true)); g.setColour (theme::text().withAlpha (0.88f)); g.drawText (title.toUpperCase(), 28, 5, getWidth() - 34, 20, juce::Justification::centredLeft);
     }
 private:
     bool isShown (const Item& it) const { return it.level <= mode && (! it.showIf || it.showIf()); }

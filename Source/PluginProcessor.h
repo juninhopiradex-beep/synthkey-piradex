@@ -87,6 +87,7 @@ public:
     std::atomic<bool> previewMode { false }, previewExpired { false };
     std::atomic<float> previewSecondsLeft { 0 };
     juce::MidiKeyboardState keyboardState;
+    juce::MidiMessageCollector uiMidi;                    // pitch bend / mod wheel vindos da interface (rodas do teclado)
     sk::GroovePlayer groove;                              // reprodutor de grooves (injeta notas no MIDI de entrada)
     std::function<void()> onPresetLoaded;                // chamado na thread de mensagens
 
