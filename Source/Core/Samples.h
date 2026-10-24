@@ -2,6 +2,7 @@
 //  SYNTHKEY by Piradex — biblioteca de samples (instrumentos, zonas) e WAV mínimo
 // =============================================================================
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <cmath>
@@ -12,10 +13,22 @@
 
 namespace sk
 {
+// versão do loop esticada ao tempo do projeto (feita numa thread de fundo; o áudio só lê)
+struct StretchedLoop { float bpm = 0; std::vector<float> l, r; };
+struct LoopSync
+{
+    float srcBpm = 0, beats = 0;                       // andamento original e duração em tempos (1 compasso 4/4 = 4)
+    std::atomic<float> want { 0.0f };                  // andamento pedido pelo motor (BPM do projeto)
+    std::atomic<bool> active { false };                // já foi tocado: vale a pena manter esticado
+    std::atomic<const StretchedLoop*> cur { nullptr }; // buffer esticado pronto (propriedade da thread de fundo)
+    std::unique_ptr<StretchedLoop> owned;              // só a thread de fundo mexe
+};
+
 struct SampleData
 {
     std::vector<float> l, r;      // r vazio = mono
     float sampleRate = 44100.0f;
+    std::shared_ptr<LoopSync> sync;                    // só existe em loops sincronizados com o tempo
     int frames() const { return (int) l.size(); }
     bool stereo() const { return ! r.empty(); }
 };
@@ -27,6 +40,7 @@ struct Zone
     int loopStart = -1, loopEnd = -1;   // em amostras (−1 = sem loop)
     float gain = 1.0f;
     int rr = 0;                    // grupo de round-robin (zonas com a mesma gama alternam)
+    float loopBpm = 0, loopBeats = 0;   // loop sincronizado: andamento original e duração em tempos (0 = não é loop de tempo)
     std::string file;              // nome de ficheiro (para packs)
 };
 
@@ -55,6 +69,7 @@ struct Library
         for (auto& d : o.data) data.push_back (d);
         for (auto i : o.inst) { for (auto& z : i.zones) if (z.data >= 0) z.data += base; inst.push_back (std::move (i)); }
     }
+    bool hasLoops() const { for (auto& i : inst) for (auto& z : i.zones) if (z.loopBeats > 0) return true; return false; }
     size_t sampleCount() const { size_t n = 0; for (auto& i : inst) n += i.zones.size(); return n; }
     // junta outra biblioteca (move os dados e ajusta os índices)
     void absorb (Library&& o)

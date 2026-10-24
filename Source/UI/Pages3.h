@@ -6,6 +6,9 @@
 #include "Pages2.h"
 #include "../Core/Grooves.h"
 #include "../GrooveStore.h"
+#include "../UserAudio.h"
+#include "../Core/AudioToMidi.h"
+#include <thread>
 
 namespace ui
 {
@@ -247,28 +250,61 @@ private:
     enum Mode { None, Creating, Existing } mode = None; Lay frozen; int hit = -1, anchor = 0, startVel = 100, lastLen = 2; float startY = 0; bool moved = false;
 };
 
-class MidiDragHandle : public juce::Component
+// nome de ficheiro só com ASCII (algumas DAWs engasgam-se com acentos e '#')
+inline juce::String asciiName (const juce::String& in)
+{
+    juce::String o;
+    for (int i = 0; i < in.length(); ++i)
+    {
+        const juce::juce_wchar c = in[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') { o << juce::String::charToString (c); continue; }
+        switch (c)
+        {
+            case 0xE1: case 0xE0: case 0xE2: case 0xE3: case 0xE4: case 0xC1: case 0xC0: case 0xC2: case 0xC3: o << "a"; break;
+            case 0xE9: case 0xE8: case 0xEA: case 0xC9: case 0xCA: o << "e"; break;
+            case 0xED: case 0xEC: case 0xCD: o << "i"; break;
+            case 0xF3: case 0xF2: case 0xF4: case 0xF5: case 0xD3: case 0xD4: case 0xD5: o << "o"; break;
+            case 0xFA: case 0xF9: case 0xDA: o << "u"; break;
+            case 0xE7: case 0xC7: o << "c"; break;
+            default: if (! o.endsWithChar ('_')) o << "_"; break;
+        }
+    }
+    o = o.trimCharactersAtStart ("_").trimCharactersAtEnd ("_"); if (o.isEmpty()) o = "groove"; return o.substring (0, 48);
+}
+
+// Caixa de exportação: ARRASTAR leva o ficheiro para a DAW; CLICAR abre o menu (guardar como… / mostrar na pasta)
+class ExportHandle : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    std::function<juce::File()> makeFile;
+    juce::String title;
+    std::function<juce::String()> subText;                       // linha pequena (estado)
+    std::function<juce::File()> makeFile;                        // ficheiro pronto para arrastar ({} = ainda não está)
+    std::function<void()> onClick;                               // clique sem arrastar
+    std::function<void (const juce::String&)> onProblem;
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (1.0f); g.setColour (isMouseOver() ? theme::accent().withAlpha (0.20f) : juce::Colour (0xFF121528)); g.fillRoundedRectangle (r, 8.0f);
         g.setColour (theme::accent()); const float d[2] = { 5.0f, 5.0f }; juce::Path p; p.addRoundedRectangle (r.reduced (0.5f), 8.0f);
         juce::PathStrokeType st (1.2f); juce::Path dashed; st.createDashedStroke (dashed, p, d, 2); g.fillPath (dashed);
-        g.setColour (theme::text()); g.setFont (theme::font (13.0f, true));
-        g.drawText (TX ("\xE2\xA0\xBF  ARRASTAR MIDI PARA O DAW"), getLocalBounds(), juce::Justification::centred);
+        g.setColour (theme::text()); g.setFont (theme::font (12.5f, true));
+        g.drawText (TX ("\xE2\xA0\xBF  ") + title, getLocalBounds().withTrimmedBottom (14), juce::Justification::centred);
+        g.setColour (theme::dim()); g.setFont (theme::font (10.0f));
+        g.drawText (subText ? subText() : juce::String(), getLocalBounds().withTrimmedTop (getHeight() - 20).withTrimmedBottom (3), juce::Justification::centred);
     }
     void mouseEnter (const juce::MouseEvent&) override { repaint(); } void mouseExit (const juce::MouseEvent&) override { repaint(); }
+    void mouseDown (const juce::MouseEvent&) override { armed = true; started = false; }          // cada clique recomeca do zero: nunca fica preso
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (dragging || e.getDistanceFromDragStart() < 6 || ! makeFile) return;
-        const auto f = makeFile(); if (! f.existsAsFile()) return;
-        dragging = true; juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray (f.getFullPathName()), false, this, [this] { dragging = false; });
+        if (! armed || started || e.getDistanceFromDragStart() < 5) return;
+        armed = false;
+        const auto f = makeFile ? makeFile() : juce::File();
+        if (! f.existsAsFile()) { started = true; if (onProblem) onProblem (TX ("O ficheiro ainda n\xC3\xA3o est\xC3\xA1 pronto \xE2\x80\x94 espera um instante e tenta outra vez (ou clica para guardar).")); return; }
+        started = true;
+        juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray (f.getFullPathName()), false, this, nullptr);
     }
-    void mouseUp (const juce::MouseEvent&) override { dragging = false; }
+    void mouseUp (const juce::MouseEvent& e) override { const bool click = ! started && e.getDistanceFromDragStart() < 5; armed = false; started = false; if (click && onClick) onClick(); }
 private:
-    bool dragging = false;
+    bool armed = false, started = false;
 };
 
 // ================================================================================== página GROOVES
@@ -288,7 +324,7 @@ public:
         kindBox.setSelectedId (1, juce::dontSendNotification); kindBox.onChange = [this] { rebuild(); }; kindBox.setBounds (846, 2, 140, 28);
         addAndMakeVisible (styleModeBtn); styleModeBtn.setButtonText ("MODO ESTILO"); styleModeBtn.setBounds (996, 0, 160, 32); styleModeBtn.onClick = [this] { applyStyleMode(); };
         styleModeBtn.setTooltip (TX ("Escolhe o estilo: muda o padr\xC3\xA3o do arpejador, filtra os grooves e carrega um preset do estilo"));
-        addAndMakeVisible (list); list.setModel (this); list.setRowHeight (36); list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF0A0C18)); list.setOutlineThickness (0); list.setBounds (0, 42, 470, 410);
+        addAndMakeVisible (list); list.setModel (this); list.setRowHeight (36); list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF0A0C18)); list.setOutlineThickness (0); list.setBounds (0, 42, 470, 364);
         addAndMakeVisible (roll); roll.setBounds (494, 92, 648, 236);
         roll.beginEdit = [this] { return makeEditable(); };
         roll.edited = [this] { if (auto* g = editing()) { if (playing) proc.groove.update (*g, transposeSemis()); } };
@@ -304,10 +340,20 @@ public:
         for (int i = 0; i < 12; ++i) keyBox.addItem (juce::String ("Tom: ") + keys[i], i + 1); keyBox.setSelectedId (1, juce::dontSendNotification); keyBox.setBounds (626, 354, 110, 28);
         keyBox.onChange = [this] { if (playing) restart(); };
         addAndMakeVisible (bpmSlider); bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal); bpmSlider.setRange (60.0, 200.0, 1.0); bpmSlider.setValue (120.0, juce::dontSendNotification);
-        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 24); bpmSlider.setTextValueSuffix (" bpm"); bpmSlider.setBounds (750, 352, 392, 32);
+        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 24); bpmSlider.setTextValueSuffix (" bpm"); bpmSlider.setBounds (750, 352, 296, 32);
         bpmSlider.onValueChange = [this] { if (playing) proc.groove.setBpm (bpmSlider.getValue()); };
-        addAndMakeVisible (drag); drag.setBounds (494, 402, 290, 44); drag.makeFile = [this] { return exportMidi(); };
-        addAndMakeVisible (soundBtn); soundBtn.setBounds (796, 402, 226, 44); soundBtn.onClick = [this] { chooseSound(); };
+        addAndMakeVisible (projBtn); projBtn.setButtonText ("= PROJETO"); projBtn.setBounds (1052, 354, 90, 28); projBtn.onClick = [this] { useProjectTempo(); };
+        projBtn.setTooltip (TX ("Usar o andamento do projeto (DAW): o groove, o MIDI e o WAV exportados ficam no tempo do projeto"));
+        addAndMakeVisible (a2mBtn); a2mBtn.setButtonText (TX ("WAV \xE2\x86\x92 MIDI  (converter \xC3\xA1udio em groove)")); a2mBtn.setBounds (0, 414, 470, 36); a2mBtn.onClick = [this] { chooseAudio(); };
+        a2mBtn.setTooltip (TX ("Escolhe um WAV (ou arrasta-o para esta p\xC3\xA1gina): o SYNTHKEY encontra as notas e cria um groove em MIDI que podes editar, tocar e levar para a DAW"));
+        addAndMakeVisible (dragMidi); dragMidi.setBounds (494, 402, 170, 44); dragMidi.title = TX ("MIDI \xE2\x86\x92 DAW");
+        dragMidi.subText = [this] { return selected() ? TX ("arrasta \xC2\xB7 ou clica para guardar") : juce::String(); };
+        dragMidi.makeFile = [this] { return exportMidi(); }; dragMidi.onClick = [this] { exportMenu (false); }; dragMidi.onProblem = [this] (const juce::String& m) { if (svc.toast) svc.toast (m, true); };
+        addAndMakeVisible (dragWav); dragWav.setBounds (670, 402, 170, 44); dragWav.title = TX ("WAV \xE2\x86\x92 DAW");
+        dragWav.subText = [this] { return wavStatus(); };
+        dragWav.makeFile = [this] { return wavReady() ? wavFile : juce::File(); }; dragWav.onClick = [this] { exportMenu (true); }; dragWav.onProblem = [this] (const juce::String& m) { if (svc.toast) svc.toast (wavError.isNotEmpty() ? wavError : m, true); };
+        dragWav.setTooltip (TX ("Arrasta para uma pista de \xC3\xA1udio da DAW. O WAV leva o som escolhido no bot\xC3\xA3o SOM, no andamento do slider, e faz loop sem emenda."));
+        addAndMakeVisible (soundBtn); soundBtn.setBounds (848, 402, 174, 44); soundBtn.onClick = [this] { chooseSound(); };
         soundBtn.setTooltip (TX ("Som do groove: toca num motor \xC3\xA0 parte (ex.: kit de bateria), por isso podes tocar outro som por cima ao mesmo tempo"));
         addAndMakeVisible (volSlider); volSlider.setSliderStyle (juce::Slider::LinearHorizontal); volSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         volSlider.setRange (0.0, 1.5, 0.01); volSlider.setValue (proc.grooveVolume(), juce::dontSendNotification); volSlider.setDoubleClickReturnValue (true, 0.85);
@@ -315,9 +361,10 @@ public:
         refreshSoundBtn();
         setStyleFilter (0);
     }
+    ~GroovesPage() override { if (wavThread.joinable()) wavThread.join(); if (a2mThread.joinable()) a2mThread.join(); }
     void tick() override
     {
-        Page::tick();
+        Page::tick(); tickWav();
         if (PackHub::get().revision() != packRev) { packRev = PackHub::get().revision(); if (playing) proc.groove.stop(); sk::GrooveStore::get().setPackGrooves (PackHub::get().packGrooves()); rebuild(); }
         const bool run = proc.groove.isRunning();
         if (run != playing) { playing = run; playBtn.setButtonText (playing ? TX ("\xE2\x96\xA0  PARAR") : TX ("\xE2\x96\xB6  TOCAR")); }
@@ -419,8 +466,13 @@ private:
                 sk::GrooveStore::get().remove (g); rebuild();
             });
     }
-    bool isInterestedInFileDrag (const juce::StringArray& f) override { for (auto& s : f) if (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi")) return true; return false; }
-    void filesDropped (const juce::StringArray& f, int, int) override { for (auto& s : f) if (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi")) importMidiFile (juce::File (s)); }
+    static bool isOwnExport (const juce::String& path) { return juce::File (path).getParentDirectory() == skpaths::userDir().getChildFile ("Grooves"); }      // ficheiros que o próprio plugin exportou
+    bool isInterestedInFileDrag (const juce::StringArray& f) override { for (auto& s : f) if (! isOwnExport (s) && (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi") || useraudio::isAudioFile (juce::File (s)))) return true; return false; }
+    void filesDropped (const juce::StringArray& f, int, int) override
+    {
+        for (auto& s : f) if (! isOwnExport (s) && (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi"))) importMidiFile (juce::File (s));
+        for (auto& s : f) if (! isOwnExport (s) && useraudio::isAudioFile (juce::File (s))) { audioToMidi (juce::File (s)); break; }
+    }
     void refreshSoundBtn()
     {
         const auto k = proc.grooveSoundKey(); juce::String s;
@@ -473,8 +525,122 @@ private:
         juce::MidiFile mf; mf.setTicksPerQuarterNote (ppq); mf.addTrack (seq);
         auto dir = skpaths::userDir().getChildFile ("Grooves"); dir.createDirectory();
         static const char* keys[12] = { "C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B" };
-        const auto file = dir.getChildFile (juce::File::createLegalFileName (TX (g->name.c_str()) + "_" + keys[((tr % 12) + 12) % 12] + "_" + juce::String ((int) bpm) + "bpm") + ".mid");
+        const auto file = dir.getChildFile (asciiName (TX (g->name.c_str())) + "_" + keys[((tr % 12) + 12) % 12] + "_" + juce::String ((int) bpm) + "bpm.mid");
         file.deleteFile(); juce::FileOutputStream os (file); if (! os.openedOk()) return {}; mf.writeTo (os); return file;
+    }
+
+    // ---------------------------------------------------------------- exportar para a DAW
+    void useProjectTempo()
+    {
+        const double b = proc.hostBpm(); if (b < 30 || b > 300) { if (svc.toast) svc.toast (TX ("A DAW ainda n\xC3\xA3o enviou o andamento do projeto."), true); return; }
+        bpmSlider.setValue (juce::jlimit (60.0, 200.0, b), juce::sendNotificationSync);
+        if (svc.toast) svc.toast (TX ("Andamento do projeto: ") + juce::String (b, 1) + " bpm", false);
+    }
+    juce::String keyName() const { static const char* k[12] = { "C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B" }; const int tr = transposeSemis(); return k[((tr % 12) + 12) % 12]; }
+    juce::String wavKeyFor (const sk::Groove& g) const
+    {
+        juce::int64 h = 1469598103934665603LL; auto mix = [&] (juce::int64 v) { h ^= v; h *= 1099511628211LL; };
+        for (auto& n : g.notes) { mix (n.step); mix (n.note); mix (n.len); mix (n.vel); } mix ((juce::int64) std::lround (g.swing * 1000.0)); mix (g.bars);
+        return juce::String (g.name) + "|" + juce::String (g.style) + "|" + juce::String (h) + "|" + juce::String ((int) bpmSlider.getValue()) + "|" + juce::String (transposeSemis()) + "|" + proc.grooveSoundKey() + "|" + juce::String (packRev);
+    }
+    bool wavReady() const { return wavWanted.isNotEmpty() && wavWanted == wavDone && wavFile.existsAsFile(); }
+    juce::String wavStatus() const
+    {
+        if (! selected()) return {}; if (lockedPack (selected())) return TX ("pack bloqueado");
+        if (wavError.isNotEmpty() && wavFailKey == wavWanted) return TX ("n\xC3\xA3o foi poss\xC3\xADvel gerar");
+        if (wavReady()) return TX ("pronto \xC2\xB7 arrasta ou clica para guardar");
+        return TX ("a preparar o \xC3\xA1udio\xE2\x80\xA6");
+    }
+    void tickWav()
+    {
+        const auto* g = selected(); juce::String key; if (g && ! lockedPack (g) && ! g->notes.empty()) key = wavKeyFor (*g);
+        if (key != wavWanted) { wavWanted = key; wavChangedAt = juce::Time::getMillisecondCounter(); wavError = {}; dragWav.repaint(); }
+        if (key.isEmpty() || wavReady() || wavBusy.load() || wavFailKey == key || juce::Time::getMillisecondCounter() - wavChangedAt < 450) return;
+        if (wavThread.joinable()) wavThread.join();
+        const auto dir = skpaths::userDir().getChildFile ("Grooves"); dir.createDirectory();
+        const auto file = dir.getChildFile (asciiName (TX (g->name.c_str())) + "_" + keyName() + "_" + juce::String ((int) bpmSlider.getValue()) + "bpm.wav");
+        sk::Groove copy = *g; const int tr = transposeSemis(); const double bpm = bpmSlider.getValue(); wavBusy.store (true);
+        juce::Component::SafePointer<GroovesPage> self (this);
+        wavThread = std::thread ([this, self, copy, tr, bpm, file, key]
+        {
+            const auto err = proc.renderGrooveWav (copy, tr, bpm, 1, file);
+            juce::MessageManager::callAsync ([self, err, file, key]
+            {
+                if (self == nullptr) return; self->wavBusy.store (false);
+                if (err.isEmpty()) { self->wavFile = file; self->wavDone = key; self->wavError = {}; }
+                else { self->wavError = err; self->wavFailKey = key; if (self->wavWanted == key && self->svc.toast) self->svc.toast (err, true); }
+                self->dragWav.repaint();
+            });
+        });
+    }
+    void exportMenu (bool wav)
+    {
+        juce::File f = wav ? (wavReady() ? wavFile : juce::File()) : exportMidi();
+        if (! f.existsAsFile()) { if (svc.toast) svc.toast (wav ? (wavError.isNotEmpty() ? wavError : TX ("O WAV ainda est\xC3\xA1 a ser preparado \xE2\x80\x94 tenta daqui a um instante.")) : TX ("Escolhe um groove na lista."), true); return; }
+        juce::PopupMenu m; m.addItem (1, TX ("Guardar como\xE2\x80\xA6")); m.addItem (2, TX ("Mostrar na pasta")); m.addItem (3, TX ("Copiar o caminho do ficheiro"));
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (wav ? static_cast<juce::Component*> (&dragWav) : static_cast<juce::Component*> (&dragMidi)), [this, f] (int r)
+        {
+            if (r == 2) { f.revealToUser(); if (svc.toast) svc.toast (TX ("Ficheiro: ") + f.getFullPathName(), false); }
+            else if (r == 3) { juce::SystemClipboard::copyTextToClipboard (f.getFullPathName()); if (svc.toast) svc.toast (TX ("Caminho copiado: ") + f.getFullPathName(), false); }
+            else if (r == 1)
+            {
+                saveChooser = std::make_shared<juce::FileChooser> (TX ("Guardar ficheiro"), juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile (f.getFileName()), "*" + f.getFileExtension());
+                saveChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting, [this, f] (const juce::FileChooser& fc)
+                {
+                    auto dst = fc.getResult(); if (dst == juce::File()) return; if (dst.getFileExtension().isEmpty()) dst = dst.withFileExtension (f.getFileExtension());
+                    if (f.copyFileTo (dst)) { if (svc.toast) svc.toast (TX ("Guardado: ") + dst.getFullPathName(), false); } else if (svc.toast) svc.toast (TX ("N\xC3\xA3o foi poss\xC3\xADvel guardar o ficheiro."), true);
+                });
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------- WAV -> MIDI
+    void chooseAudio()
+    {
+        audioChooser = std::make_shared<juce::FileChooser> (TX ("WAV \xE2\x86\x92 MIDI: escolhe o \xC3\xA1udio"), juce::File::getSpecialLocation (juce::File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac");
+        audioChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) { const auto f = fc.getResult(); if (f != juce::File()) audioToMidi (f); });
+    }
+    void audioToMidi (const juce::File& f)
+    {
+        if (a2mBusy.load()) { if (svc.toast) svc.toast (TX ("Ainda estou a converter o ficheiro anterior\xE2\x80\xA6"), true); return; }
+        juce::PopupMenu m; m.addItem (1, TX ("Detetar sozinho (recomendado)")); m.addSeparator(); m.addItem (2, TX ("\xC3\x89 bateria")); m.addItem (3, TX ("\xC3\x89 baixo (uma nota de cada vez)")); m.addItem (4, TX ("\xC3\x89 melodia (uma nota de cada vez)")); m.addItem (5, TX ("S\xC3\xA3o acordes"));
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&a2mBtn), [this, f] (int r)
+        {
+            if (r < 1) return; static const char* kinds[5] = { "auto", "Bateria", "Baixo", "Melodia", "Acordes" }; const std::string kind = kinds[r - 1];
+            if (! svc.prompt) { startA2m (f, kind, 0.0); return; }
+            svc.prompt (TX ("WAV \xE2\x86\x92 MIDI"), TX ("Andamento do \xC3\xA1udio em bpm. Deixa em branco para o SYNTHKEY descobrir sozinho; se souberes o valor, escreve-o \xE2\x80\x94 fica mais certo."), "", TX ("Converter"),
+                [this, f, kind] (const juce::String& txt) -> juce::String
+                {
+                    double bpm = 0.0; const auto t = txt.trim().replaceCharacter (',', '.');
+                    if (t.isNotEmpty()) { bpm = t.getDoubleValue(); if (bpm < 40.0 || bpm > 300.0) return TX ("Escreve um andamento entre 40 e 300 bpm (ou deixa em branco)."); }
+                    startA2m (f, kind, bpm); return {};
+                });
+        });
+    }
+    void startA2m (const juce::File& f, const std::string& kind, double bpm)
+    {
+        if (a2mThread.joinable()) a2mThread.join(); a2mBusy.store (true); a2mBtn.setEnabled (false);
+        if (svc.toast) svc.toast (TX ("A analisar o \xC3\xA1udio\xE2\x80\xA6 (alguns segundos)"), false);
+        const std::string style = styleIdx > 0 && styleIdx < 8 ? styleIds[(size_t) styleIdx] : "trap"; juce::Component::SafePointer<GroovesPage> self (this);
+        a2mThread = std::thread ([self, f, kind, bpm, style]
+        {
+            sk::SampleData sd; juce::String err = useraudio::decode (f, sd); sk::a2m::Result res;
+            if (err.isEmpty())
+            {
+                sk::a2m::Options o; o.style = style; o.kind = kind; o.bpm = bpm; o.name = f.getFileNameWithoutExtension().substring (0, 40).toStdString(); o.maxSeconds = 60.0;
+                res = sk::a2m::convert (useraudio::toMono (sd), sd.sampleRate, o); if (! res.ok) err = juce::String::fromUTF8 (res.error.c_str());
+            }
+            juce::MessageManager::callAsync ([self, err, res]
+            {
+                if (self == nullptr) return; self->a2mBusy.store (false); self->a2mBtn.setEnabled (true);
+                if (err.isNotEmpty()) { if (self->svc.toast) self->svc.toast (err, true); return; }
+                sk::Groove g = res.groove; juce::String serr; auto* saved = sk::GrooveStore::get().save (g, &serr);
+                if (! saved) { if (self->svc.toast) self->svc.toast (serr, true); return; }
+                self->selectGroove (saved);
+                if (self->svc.toast) self->svc.toast (TX ("Convertido: ") + TX (saved->name.c_str()) + TX ("  \xC2\xB7  ") + TX (saved->kind.c_str()) + TX ("  \xC2\xB7  ") + juce::String (saved->bpm) + TX (" bpm  \xC2\xB7  ") + juce::String (res.noteCount) + TX (" notas")
+                                                      + (res.confidence < 0.35 ? TX ("  \xC2\xB7  andamento incerto \xE2\x80\x94 se soar torto, converte outra vez a indicar o bpm") : juce::String()) + TX ("  \xC2\xB7  guardado em MEUS"), false);
+            });
+        });
     }
 
     // lista
@@ -494,7 +660,9 @@ private:
     void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { restart(); }
 
     Services& svc; juce::OwnedArray<juce::TextButton> styleBtns; std::vector<std::string> styleIds; int styleIdx = 0;
-    juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn, soundBtn, newBtn, importBtn, renameBtn, deleteBtn; std::shared_ptr<juce::FileChooser> midiChooser; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
+    juce::ComboBox kindBox, keyBox; juce::TextButton projBtn, a2mBtn, styleModeBtn, playBtn, soundBtn, newBtn, importBtn, renameBtn, deleteBtn; std::shared_ptr<juce::FileChooser> midiChooser; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; ExportHandle dragMidi, dragWav;
     std::vector<const sk::Groove*> rows; int selRow = -1; bool playing = false; int packRev = -1;
+    std::shared_ptr<juce::FileChooser> saveChooser, audioChooser; std::thread wavThread, a2mThread; std::atomic<bool> wavBusy { false }, a2mBusy { false };
+    juce::String wavWanted, wavDone, wavFailKey, wavError; juce::File wavFile; juce::uint32 wavChangedAt = 0;
 };
 }

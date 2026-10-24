@@ -4,6 +4,7 @@
 #include "BinaryData.h"
 #include "Core/NucleoGains.h"
 #include "UserAudio.h"
+#include "Core/LoopStretcher.h"
 
 using namespace sk;
 
@@ -190,7 +191,7 @@ void PackHub::reloadUserSamples()
         const auto key = f.getFullPathName().toStdString(); const auto mod = f.getLastModificationTime().toMilliseconds(); const auto size = f.getSize();
         UserCacheItem item;
         if (auto it = old.find (key); it != old.end() && it->second.mod == mod && it->second.size == size) item = it->second;
-        else { juce::String err; item.mod = mod; item.size = size; if (! useraudio::makeInstrument (f, item.lib, err)) continue; }
+        else { juce::String err; item.mod = mod; item.size = size; if (! useraudio::makeInstrument (f, item.lib, err)) continue; LoopStretcher::get().registerLibrary (item.lib); }
         // ids únicos
         for (auto& in : item.lib.inst) { std::string base = in.id; int n = 2; while (lib->indexOf (in.id) >= 0) in.id = base + "_" + std::to_string (n++); }
         lib->appendShared (item.lib); next[key] = std::move (item);

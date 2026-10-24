@@ -64,6 +64,12 @@ public:
     UserWavetable& userWavetable() { return userWt; }
     void setLibrary (const Library* l) { if (l != lib) { lib = l; panic(); for (auto& v : voices) { v.zone[0] = v.zone[1] = nullptr; v.sd[0] = v.sd[1] = nullptr; v.instr[0] = v.instr[1] = nullptr; } } }
     void setBpm (double b) { bpm = (float) std::max (20.0, std::min (400.0, b)); }
+    // posição do projeto no início do próximo render (em tempos/"ppq") e se o transporte está a andar — alinha os loops sincronizados
+    void setTransport (double ppq, bool playing) { hostPpq = ppq; hostPlaying = playing; }
+    // fase (0..1) do último loop sincronizado a tocar, para a interface
+    float loopPhase() const { return loopPh.load (std::memory_order_relaxed); }
+    float loopBpmSrc() const { return loopSrc.load (std::memory_order_relaxed); }
+    bool loopStretched() const { return loopSt.load (std::memory_order_relaxed); }
     void setModWheel (float v) { modWheel = v; }
     void setAftertouch (float v) { aftertouch = v; }
     void setPitchBend (float v) { pitchBend = v; }
@@ -131,6 +137,7 @@ public:
     // ---------------------------- áudio -----------------------------------------------
     void render (float* L, float* R, int n)
     {
+        renderPpq = hostPpq;
         if (factor == 1) { renderCore (L, R, n); return; }
         int done = 0;
         while (done < n)
@@ -144,13 +151,14 @@ public:
 
     void renderCore (float* L, float* R, int n)
     {
-        n = std::min (n, maxN);
+        n = std::min (n, maxN); loopSeen = false;
         std::fill (busL.begin(), busL.begin() + n, 0.0f); std::fill (busR.begin(), busR.begin() + n, 0.0f);
         int pos = 0;
         while (pos < n)
         {
             const int m = std::min (kSub, n - pos);
-            for (auto& v : voices) if (v.active) renderVoice (v, m, busL.data() + pos, busR.data() + pos);
+            subPpq = renderPpq; for (auto& v : voices) if (v.active) renderVoice (v, m, busL.data() + pos, busR.data() + pos);
+            renderPpq += (double) m * (double) bpm / (60.0 * (double) sr);
             pos += m;
         }
         // ---- inserts, aux, volume, limitador ----
@@ -170,6 +178,7 @@ public:
             L[i] = (aL[(size_t) i] + bL[(size_t) i] + xL[(size_t) i] * ret) * g;
             R[i] = (aR[(size_t) i] + bR[(size_t) i] + xR[(size_t) i] * ret) * g;
         }
+        if (! loopSeen) loopSrc.store (0.0f, std::memory_order_relaxed);
         lim.process (L, R, n, prm[P_LIM_CEIL], prm[P_LIM_ON] > 0.5f);
         float pl = 0, pr = 0; for (int i = 0; i < n; ++i) { pl = std::max (pl, std::fabs (L[i])); pr = std::max (pr, std::fabs (R[i])); }
         peakL = std::max (pl, peakL * 0.92f); peakR = std::max (pr, peakR * 0.92f);
@@ -223,10 +232,13 @@ private:
         const Zone* zone[2] = { nullptr, nullptr };
         const SampleData* sd[2] = { nullptr, nullptr };
         const Instrument* instr[2] = { nullptr, nullptr };
+        double lbeat[2] = { 0.0, 0.0 };                      // posição (em tempos) dos loops sincronizados quando o projeto está parado
         float subPh = 0; NoiseGen noise; float prevGain = 0, fade = 0;
     };
 
     float sr = 44100.0f, bpm = 120.0f; int maxN = 512;
+    double hostPpq = 0, renderPpq = 0, subPpq = 0; bool hostPlaying = false;
+    std::atomic<float> loopPh { 0.0f }, loopSrc { 0.0f }; std::atomic<bool> loopSt { false }; bool loopSeen = false;
     UserWavetable userWt;
     const float* prm = nullptr; const Wavetables* wt = nullptr; const Library* lib = nullptr;
     Voice voices[kMaxVoices];
@@ -303,7 +315,7 @@ private:
         const int pick = pe[P_A_RR] > 0.5f ? (rrCounter[E]++ % nc) : 0;
         const Zone* z = cand[pick];
         if (z->data < 0 || z->data >= (int) lib->data.size()) return;
-        v.zone[E] = z; v.sd[E] = lib->data[(size_t) z->data].get(); v.instr[E] = &I;
+        v.zone[E] = z; v.sd[E] = lib->data[(size_t) z->data].get(); v.instr[E] = &I; v.lbeat[E] = 0.0;
         const int len = v.sd[E]->frames();
         const float st = clampf (pe[P_A_START], 0.0f, 0.98f);
         for (int u = 0; u < kMaxUni; ++u) v.sp[E][u] = pe[P_A_REV] > 0.5f ? (double) (len - 3) * (1.0 - st) : (double) len * st;
@@ -609,9 +621,40 @@ private:
         return hermite (g (i - 1), g (i), g (i + 1), g (i + 2), t);
     }
 
+    // loop sincronizado com o andamento do projeto: a posição vem do compasso (ppq), nunca deriva nem desalinha
+    static float hermiteWrap (const float* d, int len, double pos)
+    {
+        const int i = (int) pos; const float t = (float) (pos - (double) i);
+        auto g = [&] (int k) { k %= len; if (k < 0) k += len; return d[k]; };
+        return hermite (g (i - 1), g (i), g (i + 1), g (i + 2), t);
+    }
+    void renderLoopZone (Voice& v, int E, int m, const float* pe, const float* gL, const float* gR, int uni, float* oL, float* oR)
+    {
+        const Zone* z = v.zone[E]; const SampleData* sd = v.sd[E];
+        const float* dl = sd->l.data(); const float* dr = sd->stereo() ? sd->r.data() : dl; int len = sd->frames(); bool stretched = false;
+        if (auto* sy = sd->sync.get())
+        {
+            sy->want.store (bpm, std::memory_order_relaxed); sy->active.store (true, std::memory_order_relaxed);
+            if (auto* st = sy->cur.load (std::memory_order_acquire))
+                if (std::fabs (st->bpm - bpm) <= 0.0015f * bpm && st->l.size() >= 64) { dl = st->l.data(); dr = st->r.empty() ? dl : st->r.data(); len = (int) st->l.size(); stretched = true; }
+        }
+        if (len < 8) return;
+        float sumL = 0, sumR = 0; for (int u = 0; u < uni; ++u) { sumL += gL[u]; sumR += gR[u]; }
+        const double dp = (double) bpm / (60.0 * (double) sr), invB = 1.0 / (double) z->loopBeats; const bool rev = pe[P_A_REV] > 0.5f;
+        const double b0 = hostPlaying ? subPpq : v.lbeat[E]; const float zg = z->gain; double ph = 0;
+        for (int i = 0; i < m; ++i)
+        {
+            ph = (b0 + (double) i * dp) * invB; ph -= std::floor (ph); if (rev) ph = 1.0 - ph;
+            const double pos = ph * (double) len;
+            oL[i] += hermiteWrap (dl, len, pos) * sumL * zg; oR[i] += hermiteWrap (dr, len, pos) * sumR * zg;
+        }
+        v.lbeat[E] = b0 + (double) m * dp; loopSeen = true;
+        loopPh.store ((float) ph, std::memory_order_relaxed); loopSrc.store (z->loopBpm, std::memory_order_relaxed); loopSt.store (stretched, std::memory_order_relaxed);
+    }
     void renderSample (Voice& v, int E, int m, const float* pe, float note, const float* ratio, const float* gL, const float* gR, int uni, float* oL, float* oR, const float* dst)
     {
         const Zone* z = v.zone[E]; const SampleData* sd = v.sd[E]; if (! z || ! sd) return;
+        if (z->loopBeats > 0.0f) { renderLoopZone (v, E, m, pe, gL, gR, uni, oL, oR); return; }
         const int len = sd->frames(); if (len < 4) return;
         const float baseStep = std::exp2 ((note - (float) z->root) / 12.0f) * (sd->sampleRate / sr);
         const bool loop = pe[P_A_LOOP] > 0.5f && z->loopStart >= 0 && z->loopEnd > z->loopStart + 8; const bool rev = pe[P_A_REV] > 0.5f;

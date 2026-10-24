@@ -1,5 +1,5 @@
 // =============================================================================
-//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.4)
+//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.5)
 // =============================================================================
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -8,7 +8,7 @@
 
 namespace ui
 {
-inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v14.seen"); }
+inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v15.seen"); }
 
 class HelpOverlay : public juce::Component
 {
@@ -26,20 +26,20 @@ public:
     {
         struct Item { const char* head; const char* body; };
         static const Item items[] = {
-            { "\xE2\x9C\xA6 DESCREVER SOM",   "Escreve o que queres \xE2\x80\x94 \"baixo escuro e agressivo\", \"pad quente e largo\", \"pluck brilhante curto\", \"808 drill\" \xE2\x80\x94 no bot\xC3\xA3o-orbe da barra de cima e o SYNTHKEY monta um preset. Carrega outra vez para variantes." },
+            { "LOOPS NO TEMPO DO PROJETO",    "Os loops (packs e Est\xC3\xBA" "dio) seguem o andamento da DAW: esticam-se sem mudar a nota e repetem sem emenda, alinhados com a grelha do projeto. No orbe v\xC3\xAA o anel de fase e \"96 \xE2\x86\x92 120 bpm\"; com o projeto parado o loop toca ao tempo do projeto." },
+            { "MIDI E WAV PARA A DAW",        "Em GROOVES, arrasta MIDI \xE2\x86\x92 DAW ou WAV \xE2\x86\x92 DAW para uma pista. O WAV sai com o som escolhido em SOM e faz loop sem emenda; = PROJETO p\xC3\xB5" "e o andamento do projeto. Se a tua DAW n\xC3\xA3o aceitar o arrasto, clica na caixa: Guardar como\xE2\x80\xA6 ou Mostrar na pasta." },
+            { "WAV \xE2\x86\x92 MIDI",             "Em GROOVES, o bot\xC3\xA3o WAV \xE2\x86\x92 MIDI (ou arrasta um \xC3\xA1udio para a p\xC3\xA1gina) descobre as notas de bateria, baixo, melodia ou acordes e cria um groove edit\xC3\xA1vel em MEUS. Diz o bpm se o souberes \xE2\x80\x94 fica mais certo." },
+            { "EDITOR + IMPORTAR MIDI",       "Clica na grelha para criar notas, numa nota para a apagar; arrasta na vertical para a velocidade. NOVO, IMPORTAR MIDI (ou arrasta um .mid) e MEUS guardam na tua pasta; os de f\xC3\xA1" "brica geram uma c\xC3\xB3pia." },
+            { "\xE2\x9C\xA6 DESCREVER SOM",   "Escreve o que queres \xE2\x80\x94 \"baixo escuro e agressivo\", \"pad quente e largo\", \"808 drill\" \xE2\x80\x94 no bot\xC3\xA3o-orbe da barra de cima e o SYNTHKEY monta um preset. Carrega outra vez para variantes." },
             { "CAMADAS (GROOVES)", "No separador GROOVES escolhe o som do groove (Auto = kit de bateria do estilo, Igual ao teu som, ou qualquer preset) e o volume. O groove toca com o seu pr\xC3\xB3prio som enquanto tu tocas outro no teclado." },
-            { "EDITOR + MIDI",                "Clica na grelha para criar notas, numa nota para a apagar; arrasta na vertical para a velocidade. NOVO, IMPORTAR MIDI (ou arrasta um .mid) e MEUS guardam na tua pasta; os de f\xC3\xA1" "brica geram uma c\xC3\xB3pia." },
-            { "EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO", "Na zona ADMIN (EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO): junta samples, loops, multi-samples, MIDI e presets, e gera um pack .bfpack para um estilo. INSTALAR NO PLUGIN usa-o logo. Novos kits de bateria B e C, vozes, percuss\xC3\xA3o e camadas em cada estilo." },
+            { "EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO", "Na zona ADMIN (EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO): junta samples, loops, multi-samples, MIDI e presets, e gera um pack .bfpack. Nos loops o SYNTHKEY deteta bpm e tempos (ou l\xC3\xAA \"96bpm\" do nome); LOOP\xE2\x80\xA6 corrige. INSTALAR NO PLUGIN usa-o logo." },
             { "ECR\xC3\x83 SOM (ORBIT)",       "Tudo numa vista: origens \xC3\xA0 esquerda, oscilador (separadores A, B, SUB + RU\xC3\x8D" "DO, VOZES), filtros, volume, efeitos e arpejador ao centro, matriz e macros \xC3\xA0 direita. O orbe mostra o espectro e a onda em tempo real." },
             { "ARRASTAR PARA MODULAR",        "Pega numa origem (LFO, envelope, STEP, DESENHO...) e larga-a em cima de qualquer potenci\xC3\xB3metro: aparece um anel com a amplitude. As origens em uso ficam iluminadas." },
-            { "MATRIZ COMPACTA",              "Clica na origem ou no destino de uma linha para escolher; arrasta a barra para a quantidade (duplo clique = 0, bot\xC3\xA3o direito = limpar a linha). A lista completa (16) est\xC3\xA1 no separador MATRIZ." },
-            { "TECLADO DE PERFORMANCE",       "Cada nota tem a sua cor e a dica mostra nome, frequ\xC3\xAAncia e velocidade. Clica mais abaixo na tecla para tocar mais forte. As rodas PITCH (volta ao centro) e MOD enviam MIDI." },
-            { "IMPORTAR WAV",                 "No oscilador, bot\xC3\xA3o WAV: cria uma wavetable a partir de qualquer ficheiro. Arrasta um \xC3\xA1udio para a janela para o usares como instrumento (pack \"Utilizador\")." },
-            { "ANULAR / REFAZER",             "Setas na barra de cima, ou Ctrl/Cmd+Z e Ctrl/Cmd+Shift+Z. No menu \xE2\x8B\xAF: guardar preset com etiquetas (Meu Lead #lead, brilhante), aleatorizar, ajuda." } };
+            { "IMPORTAR WAV",                 "No oscilador, bot\xC3\xA3o WAV: cria uma wavetable a partir de qualquer ficheiro. Arrasta um \xC3\xA1udio para a janela para o usares como instrumento (pack \"Utilizador\"); se o nome tiver \"loop\" ou \"96bpm\", vira um loop no tempo do projeto. Anular/refazer: Ctrl/Cmd+Z." } };
         g.fillAll (juce::Colour (0xD0050610));
         theme::drawCard (g, card.toFloat(), 16.0f, true);
         g.setColour (theme::accent()); g.fillRoundedRectangle ((float) card.getX() + 24, (float) card.getY() + 26, 3.0f, 20.0f, 1.5f);
-        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.4"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
+        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.5"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
         int y = card.getY() + 66;
         for (auto& it : items)
         {

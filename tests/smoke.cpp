@@ -112,6 +112,30 @@ int main()
             proc.setGrooveSoundKey ("auto");
         }
     }
+    // ---- exportar o groove para WAV (render offline com o som do groove) e arrastar para a DAW
+    {
+        const sk::Groove* dr = nullptr; for (auto& g : sk::allGrooves()) if (g.kind == "Bateria") { dr = &g; break; }
+        const sk::Groove* ba = nullptr; for (auto& g : sk::allGrooves()) if (g.kind == "Baixo") { ba = &g; break; }
+        auto check = [&] (const sk::Groove* g, const char* what, double bpm)
+        {
+            if (! g) return; proc.setGrooveSoundKey (std::string (what) == "bateria" ? "auto" : "same");
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (juce::String ("sk_export_") + what + ".wav");
+            const auto err = proc.renderGrooveWav (*g, 0, bpm, 1, f);
+            if (err.isNotEmpty()) { ++grooveFail; std::printf ("FALHOU: exportar WAV (%s): %s\n", what, err.toRawUTF8()); return; }
+            juce::WavAudioFormat wf; std::unique_ptr<juce::AudioFormatReader> rd (wf.createReaderFor (f.createInputStream().release(), true));
+            if (! rd) { ++grooveFail; std::printf ("FALHOU: WAV exportado ilegivel (%s)\n", what); return; }
+            const long want = (long) std::llround (44100.0 * 60.0 / (bpm * 4.0) * g->totalSteps());
+            juce::AudioBuffer<float> b (2, (int) rd->lengthInSamples); rd->read (&b, 0, (int) rd->lengthInSamples, 0, true, true);
+            float pk = 0; for (int c = 0; c < 2; ++c) for (int i = 0; i < b.getNumSamples(); ++i) pk = std::max (pk, std::abs (b.getSample (c, i)));
+            const int n = b.getNumSamples(); const float seam = std::abs (b.getSample (0, n - 1) - b.getSample (0, 0));
+            std::printf ("WAV %s: %d amostras (esperado %ld), %d canais, pico %.2f, salto na emenda %.3f\n", what, n, want, (int) rd->numChannels, pk, seam);
+            if (std::abs((long) n - want) > 2) { ++grooveFail; std::printf ("FALHOU: duracao do WAV exportado\n"); }
+            if (pk < 0.5f || pk > 0.95f) { ++grooveFail; std::printf ("FALHOU: nivel do WAV exportado\n"); }
+            if (seam > 0.25f) { ++grooveFail; std::printf ("FALHOU: emenda do WAV exportado\n"); }
+            f.deleteFile();
+        };
+        check (dr, "bateria", 100.0); check (ba, "baixo", 90.0); proc.setGrooveSoundKey ("auto");
+    }
     // ---- grooves do utilizador: importar MIDI, guardar, recarregar, editar ao vivo
     {
         auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sk_midi_test"); tmp.createDirectory();
@@ -185,6 +209,9 @@ int main()
         P.addAudio (keys, sk::studio::ImportMode::MultiSample, "Piano Teste");
         bool multi = false; for (auto& in : P.insts) if (in.name == "Piano Teste") multi = in.zones.size() == 3 && ! in.fixed && in.zones.front().lo == 0 && in.zones.back().hi == 127; check (multi, "estudio: multi-sample com 3 zonas e teclado completo");
         juce::Array<juce::File> lp; lp.add (wav ("Loop Perc", 330.0, 1.5)); P.addAudio (lp, sk::studio::ImportMode::Loops, {});
+        { juce::Array<juce::File> l2; l2.add (wav ("Funk_96bpm", 330.0, 5.0)); P.addAudio (l2, sk::studio::ImportMode::Loops, {});
+          const auto& z = P.insts.back().zones[0]; std::printf ("estudio: loop '%s' bpm=%.2f tempos=%d\n", P.insts.back().name.c_str(), z.loopBpm, z.loopBeats);
+          check (z.loopBeats == 8 && std::abs (z.loopBpm - 96.0) < 0.05, "estudio: loop com bpm no nome -> 96 bpm, 8 tempos"); }
         sk::Groove gg; gg.name = "Groove Teste"; gg.kind = "Bateria"; gg.bars = 1; gg.bpm = 130; gg.notes = { { 0, 36, 1, 110 }, { 4, 38, 1, 100 }, { 8, 36, 1, 110 }, { 12, 38, 1, 100 } }; P.grooves.push_back (gg);
         check (P.save(), "estudio: guardar projeto");
         sk::studio::Project P2; check (sk::studio::Project::load (testId, P2) && P2.insts.size() == P.insts.size() && P2.grooves.size() == 1, "estudio: recarregar projeto");
@@ -200,6 +227,8 @@ int main()
         auto lib = PackHub::get().library (testId); check (lib && lib->indexOf (std::string (testId) + ".kit") >= 0 && lib->indexOf (std::string (testId) + ".piano-teste") >= 0, "estudio: biblioteca com kit e piano");
         proc.refreshPresetList(); int kit = -1, pia = -1; for (size_t i = 0; i < proc.presetList().size(); ++i) { auto& p = proc.presetList()[i]; if (p.pack == testId && p.name.rfind ("Kit", 0) == 0) kit = (int) i; if (p.pack == testId && p.name == "Piano Teste") pia = (int) i; }
         check (kit >= 0 && pia >= 0, "estudio: presets automaticos (kit + piano)");
+        { bool lpOk = false; if (lib) for (auto& in : lib->inst) if (in.id == std::string (testId) + ".funk-96bpm") for (auto& z : in.zones) lpOk = z.loopBeats == 8 && std::abs (z.loopBpm - 96.0f) < 0.05f && z.data >= 0 && std::abs ((long) lib->data[(size_t) z.data]->frames() - (long) std::lround (44100.0 * 5.0)) <= 1;
+          check (lpOk, "estudio: loop chega ao plugin com bpm, tempos e duracao exata"); }
         for (int which : { kit, pia })
         {
             if (which < 0) continue; proc.loadPresetIndex (which); juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
@@ -247,6 +276,15 @@ int main()
             float pk = 0; juce::MidiBuffer mb; for (int b = 0; b < 60; ++b) { mb.clear(); if (b == 0) mb.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0); buf.clear(); proc.processBlock (buf, mb); for (int s2 = 0; s2 < 256; ++s2) pk = std::max (pk, std::abs (buf.getSample (0, s2))); }
             std::printf ("   sample importado a tocar: pico %.1f dB\n", 20.0 * std::log10 (std::max (pk, 1e-10f)));
             if (pk < 0.01f) { ++importFail; std::printf ("FALHOU: sample importado mudo\n"); }
+        }
+        { // loop largado na janela: "96bpm" no nome -> loop sincronizado (8 tempos em 5 s)
+            std::vector<float> lpd (48000 * 5); for (size_t i = 0; i < lpd.size(); ++i) lpd[i] = 0.4f * std::sin (6.283185307f * 330.0f * (float) i / 48000.0f) * std::exp (-(float) (i % 24000) / 5000.0f);
+            std::string idL; auto eL = hub.importUserSample (writeWav ("sk_drop_96bpm.wav", lpd, 48000.0), &idL); auto l2 = hub.userLibrary(); const sk::Instrument* iL = nullptr;
+            if (l2) for (auto& i : l2->inst) if (i.id == idL) iL = &i;
+            std::printf ("loop largado: '%s' cat=%s bpm=%.1f tempos=%.0f\n", idL.c_str(), iL ? iL->cat.c_str() : "?", iL ? iL->zones[0].loopBpm : 0.0f, iL ? iL->zones[0].loopBeats : 0.0f);
+            if (eL.isNotEmpty() || ! iL || iL->zones[0].loopBeats != 8.0f || std::abs (iL->zones[0].loopBpm - 96.0f) > 0.05f || ! iL->fixedPitch) { ++importFail; std::printf ("FALHOU: loop largado na janela\n"); }
+            if (iL && l2 && l2->data[(size_t) iL->zones[0].data]->sync == nullptr) { ++importFail; std::printf ("FALHOU: loop do utilizador sem sincronismo registado\n"); }
+            hub.removeUserSample (idL);
         }
         // wavetable (ciclos de 2048) + ida e volta pelo estado do projeto
         std::vector<float> wt (4 * 2048); for (int c = 0; c < 4; ++c) for (int i = 0; i < 2048; ++i) wt[(size_t) (c * 2048 + i)] = std::sin (6.2831853f * (float) (c + 1) * (float) i / 2048.0f);

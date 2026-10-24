@@ -1,8 +1,8 @@
 ; Instalador Windows do SYNTHKEY by Piradex (Inno Setup 6)
-; Compilado no GitHub Actions: ISCC /DVersao=1.4.0 installer\windows.iss
+; Compilado no GitHub Actions: ISCC /DVersao=1.5.0 installer\windows.iss
 
 #ifndef Versao
-  #define Versao "1.4.0"
+  #define Versao "1.5.0"
 #endif
 
 [Setup]

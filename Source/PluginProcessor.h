@@ -92,6 +92,9 @@ public:
     // ---- camada do groove: segundo motor com som próprio (ex.: kit do estilo) enquanto tocas noutro som ----
     //   chave: "auto" (bateria → kit do estilo; o resto → o teu som) | "same" (tudo no teu som) | nome de um preset
     void prepareGrooveLayer (const sk::Groove& g);        // escolhe o som conforme o groove; chamar antes de groove.start
+    // renderiza o groove (com o som escolhido para ele) para um WAV 24 bit estéreo que faz loop sem emenda; devolve "" ou o erro.
+    // Pode correr numa thread de fundo. 'loops' = nº de repetições do groove no ficheiro.
+    juce::String renderGrooveWav (const sk::Groove& g, int transpose, double bpm, int loops, const juce::File& out);
     juce::String grooveSoundKey() const { return apvts.state.getProperty ("grooveSound", "auto").toString(); }
     void setGrooveSoundKey (const juce::String& k) { apvts.state.setProperty ("grooveSound", k, nullptr); }
     float grooveVolume() const { return gVol.load(); }
@@ -99,6 +102,10 @@ public:
     float groovePan() const { return gPan.load(); }
     void setGroovePan (float v) { gPan.store (juce::jlimit (-1.0f, 1.0f, v)); apvts.state.setProperty ("groovePan", gPan.load(), nullptr); }
     bool grooveLayerOn() const { return gLayerOn.load(); }
+    // loops sincronizados: estado para a interface
+    struct LoopInfo { bool playing = false; float phase = 0, srcBpm = 0, hostBpm = 120; bool stretched = false, hostRunning = false; };
+    LoopInfo loopInfo() const { LoopInfo i; i.srcBpm = engine->loopBpmSrc(); i.phase = engine->loopPhase(); i.stretched = engine->loopStretched(); i.hostBpm = hostBpmShown.load(); i.hostRunning = hostPlayingShown.load(); i.playing = engine->activeVoices() > 0 && i.srcBpm > 0; return i; }
+    double hostBpm() const { return hostBpmShown.load(); }
     juce::String grooveLayerName() const { const juce::ScopedLock sl (libLock); return gLayerName; }
     std::function<void()> onPresetLoaded;                // chamado na thread de mensagens
 
@@ -123,6 +130,7 @@ private:
     std::array<std::atomic<float>*, sk::P_COUNT> raw {};
     float prm[sk::P_COUNT] = {};
     std::unique_ptr<sk::Engine> engine;
+    std::atomic<float> hostBpmShown { 120.0f }; std::atomic<bool> hostPlayingShown { false };
     std::unique_ptr<sk::Engine> engineG;                  // camada do groove
     float prmG[2][sk::P_COUNT] = {};                      // parâmetros da camada (duplo buffer: a UI escreve no inativo e troca)
     std::atomic<int> gActive { 0 }, gSmp[2] = { { 0 }, { 0 } };

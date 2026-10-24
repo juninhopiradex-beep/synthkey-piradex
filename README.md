@@ -15,8 +15,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.4.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.4.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.5.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.5.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.2.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
@@ -71,13 +71,21 @@ a ativação online está prevista para a v1.1.
 
 * **Arpejador:** o padrão de 16 passos agora é editável — arrasta as barras (em baixo = pausa), clica no número para mudar a oitava, botão direito para repetir a nota ×2/×3, e escolhe quantos passos (1–16).
 
+## v1.5.0 — loops no tempo, MIDI/WAV para a DAW, WAV → MIDI
+
+* **Loops sincronizados com o projeto:** os loops (dos packs e do Estúdio) seguem o andamento da DAW — esticam-se sem mudar a nota (WSOLA, em thread de fundo), repetem sem emenda e ficam alinhados com a grelha (posição ligada ao relógio do projeto; com o projeto parado tocam ao tempo do projeto). O orbe mostra o anel de fase e "96 → 120 bpm ×1,25".
+* **Estúdio:** o BPM e os tempos de cada loop são detetados (ou lidos do nome, ex. `Loop_96bpm.wav`); botão **LOOP…** para corrigir.
+* **GROOVES → DAW:** caixas **MIDI → DAW** e **WAV → DAW** (o WAV é renderizado com o som escolhido, no andamento do slider ou do projeto — botão **= PROJETO** — e faz loop sem emenda). Se a DAW não aceitar o arrasto, clica na caixa: *Guardar como…*, *Mostrar na pasta*, *Copiar o caminho*. Nomes de ficheiro só com ASCII.
+* **WAV → MIDI:** botão (ou arrasta um áudio para a página) que deteta bateria, baixo, melodia ou acordes, o andamento e as notas, e cria um groove editável em MEUS.
+* Limitações: o som foi validado por medição, não de ouvido; WAV → MIDI é aproximado em misturas complexas (o groove fica editável; podes indicar o bpm); não consegui testar o arrasto numa DAW real (só em X11).
+
 ## v1.4.0 — camadas, editor, estúdio
 
 * **Camadas:** o groove toca com o seu próprio som (Auto = kit de bateria do estilo, "igual ao teu som" ou qualquer preset) e volume próprio, enquanto tocas outro som no teclado.
 * **Editor de grooves:** piano-roll editável (criar/apagar notas, velocidade), **NOVO**, **IMPORTAR MIDI** (.mid, quantizado a semicolcheias, deteta bateria/acordes/baixo/melodia), grooves "MEUS" guardados em `MeusGrooves`.
 * **Estúdio de conteúdo (ADMIN):** juntar samples, loops, multi-samples, MIDI e presets por estilo e gerar um pack `.bfpack` (com capa, kit automático e presets automáticos); "Instalar no plugin" para usar logo.
 * **Mais som:** kits de bateria B e C em todos os estilos, vozes (Eh/Ee/Oh/Ey/Ah), claves, timbal, pandeireta e congas, e ~40 presets novos (camadas, percussão, vozes). Packs passam à versão 1.2.0.
-* Limitações: os loops tocam como one-shots (sem sincronização de tempo); os sons de fábrica são sintéticos.
+* Limitações: os sons de fábrica são sintéticos.
 
 ## v1.3.0 — interface "Orbit"
 

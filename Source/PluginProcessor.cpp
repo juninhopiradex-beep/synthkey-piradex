@@ -122,7 +122,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             if (auto p = pos->getPpqPosition()) ppq = *p;
             playing = pos->getIsPlaying();
         }
-    engine->setBpm (bpm);
+    engine->setBpm (bpm); hostBpmShown.store ((float) bpm); hostPlayingShown.store (playing);
 
     // ---- grooves internos: as notas entram no mesmo caminho do MIDI externo (escala / acordes / arpejador)
     grooveEvs.clear(); groove.process (n, sr, grooveEvs);
@@ -175,7 +175,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     int pos = 0;
     auto renderTo = [&] (int end)
     {
-        while (pos < end) { const int c = std::min (end - pos, engineMax); engine->render (L + pos, R + pos, c); pos += c; }
+        while (pos < end) { const int c = std::min (end - pos, engineMax); engine->setTransport (ppq + (double) pos * bpm / (60.0 * sr), playing); engine->render (L + pos, R + pos, c); pos += c; }
     };
     for (const auto& e : evs)
     {
@@ -196,6 +196,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             while (gpos < end)
             {
                 const int c = std::min (end - gpos, engineMax);
+                engineG->setTransport (ppq + (double) gpos * bpm / (60.0 * sr), playing);
                 engineG->render (gTmpL.data(), gTmpR.data(), c);
                 for (int i = 0; i < c; ++i) { L[gpos + i] += gTmpL[(size_t) i] * gl; R[gpos + i] += gTmpR[(size_t) i] * gr; }
                 gpos += c;
@@ -294,6 +295,7 @@ void SynthKeyProcessor::resolveSamples()
         int idx = -1; if (gids[e].isNotEmpty() && lib) { idx = lib->indexOf (gids[e].toStdString()); if (idx < 0) idx = lib->indexOf (fallbackFor (gids[e].toStdString())); }
         if (idx < 0 && lib && ! lib->inst.empty()) idx = 0;
         gSmp[e].store (std::max (0, idx));
+        if (lib && idx >= 0 && idx < (int) lib->inst.size()) LoopStretcher::activate (*lib, lib->inst[(size_t) idx], hostBpmShown.load());
     }
     for (int e = 0; e < 2; ++e)
     {
@@ -305,6 +307,7 @@ void SynthKeyProcessor::resolveSamples()
         }
         if (idx < 0 && lib && ! lib->inst.empty()) idx = 0;
         smpIdx[e].store (std::max (0, idx)); missing[e].store (miss && ids[e].isNotEmpty());
+        if (lib && idx >= 0 && idx < (int) lib->inst.size()) LoopStretcher::activate (*lib, lib->inst[(size_t) idx], hostBpmShown.load());     // loops: esticam-se antes da 1.ª nota
     }
     updatePreviewState();
 }
@@ -340,6 +343,68 @@ void SynthKeyProcessor::prepareGrooveLayer (const Groove& g)
     gActive.store (w);
     if (! was) gFlushMain.store (true);                 // notas que ficaram no motor principal
     gLayerOn.store (true);
+}
+
+juce::String SynthKeyProcessor::renderGrooveWav (const Groove& g, int transpose, double bpm, int loops, const juce::File& out)
+{
+    if (g.notes.empty()) return juce::CharPointer_UTF8 ("Este groove n\xC3\xA3o tem notas.");
+    bpm = juce::jlimit (30.0, 300.0, bpm); loops = juce::jlimit (1, 16, loops);
+    std::shared_ptr<const Library> lib = currentLibrary(); if (! lib || lib->inst.empty()) return juce::CharPointer_UTF8 ("A biblioteca de sons ainda n\xC3\xA3o est\xC3\xA1 pronta.");
+    // som: o mesmo critério da camada do groove ("auto" = kit do estilo na bateria, "igual" = o teu som atual)
+    const juce::String key = grooveSoundKey(); const Preset* chosen = nullptr;
+    if (key == "same") {} else if (key == "auto") { if (g.kind == "Bateria") chosen = kitPresetFor (g.style); }
+    else for (const auto& p : presets) if (juce::String (p.name) == key) { chosen = &p; break; }
+    if (chosen && presetIsLocked (*chosen)) chosen = kitPresetFor (g.style);
+    std::vector<float> pr ((size_t) P_COUNT); std::string ids[2];
+    if (chosen) { for (int i = 0; i < P_COUNT; ++i) pr[(size_t) i] = chosen->get (i); ids[0] = chosen->sampleA; ids[1] = chosen->sampleB; }
+    else
+    {
+        for (int i = 0; i < P_COUNT; ++i) pr[(size_t) i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;
+        const juce::ScopedLock sl (libLock); ids[0] = sampleId[0].toStdString(); ids[1] = sampleId[1].toStdString();
+    }
+    int smp[2] = { 0, 0 };
+    for (int e = 0; e < 2; ++e)
+    {
+        int idx = -1; if (! ids[e].empty()) { idx = lib->indexOf (ids[e]); if (idx < 0) idx = lib->indexOf (fallbackFor (ids[e])); }
+        smp[e] = std::max (0, idx);
+        if (idx >= 0 && idx < (int) lib->inst.size()) LoopStretcher::waitReady (*lib, lib->inst[(size_t) idx], (float) bpm, 6000);     // loops: esticados para este andamento
+    }
+    pr[(size_t) P_A_SMP] = (float) smp[0]; pr[(size_t) P_B_SMP] = (float) smp[1];
+
+    constexpr double kSr = 44100.0; constexpr int kBlock = 512;
+    auto eng = std::make_unique<Engine>(); eng->setQuality (std::max (0, std::min (2, (int) pr[(size_t) P_QUALITY]))); eng->prepare (kSr, kBlock);
+    eng->setLibrary (lib.get()); eng->setParams (pr.data()); eng->setBpm (bpm);
+    GroovePlayer player; player.start (g, transpose, bpm);
+    const double spl = kSr * 60.0 / (bpm * 4.0);                                       // amostras por passo
+    const long loopLen = (long) std::llround (spl * g.totalSteps()), total = loopLen * loops;
+    const int lat = eng->latencySamples(); const long tailLen = (long) (kSr * 3.0);
+    const long renderLen = total + tailLen + lat;
+    std::vector<float> bl ((size_t) renderLen, 0.0f), br ((size_t) renderLen, 0.0f);
+    std::vector<GMidiEvent> ev; long pos = 0; std::vector<float> tl ((size_t) kBlock), tr ((size_t) kBlock);
+    while (pos < renderLen)
+    {
+        const int n = (int) std::min<long> (kBlock, renderLen - pos);
+        ev.clear(); if (pos < total) { player.process (n, kSr, ev); ev.erase (std::remove_if (ev.begin(), ev.end(), [&] (const GMidiEvent& e) { return e.on && pos + e.offset >= total; }), ev.end()); }
+        std::stable_sort (ev.begin(), ev.end(), [] (const GMidiEvent& a, const GMidiEvent& b) { return a.offset < b.offset; });
+        int done = 0; const double ppq0 = (double) pos * bpm / (60.0 * kSr);
+        auto rend = [&] (int end) { while (done < end) { const int c = end - done; eng->setTransport (ppq0 + (double) done * bpm / (60.0 * kSr), true); eng->render (bl.data() + pos + done, br.data() + pos + done, c); done += c; } };
+        for (const auto& e : ev) { rend (juce::jlimit (done, n, e.offset)); if (e.on) eng->noteOn (e.note, (float) e.vel / 127.0f); else eng->noteOff (e.note); }
+        rend (n); pos += n;
+    }
+    // compensa a latência do motor e dobra a cauda sobre o início: o ficheiro faz loop sem emenda
+    std::vector<float> ol ((size_t) total, 0.0f), orr ((size_t) total, 0.0f);
+    for (long i = 0; i < renderLen - lat; ++i) { const long d = i % total; ol[(size_t) d] += bl[(size_t) (i + lat)]; orr[(size_t) d] += br[(size_t) (i + lat)]; }
+    float pk = 0; for (long i = 0; i < total; ++i) pk = std::max ({ pk, std::fabs (ol[(size_t) i]), std::fabs (orr[(size_t) i]) });
+    if (pk < 1.0e-5f) return juce::CharPointer_UTF8 ("O groove ficou em sil\xC3\xAAncio com este som \xE2\x80\x94 escolhe outro som (bot\xC3\xA3o SOM).");
+    const float norm = 0.89f / pk; for (long i = 0; i < total; ++i) { ol[(size_t) i] *= norm; orr[(size_t) i] *= norm; }
+    juce::WavAudioFormat wav; out.deleteFile(); std::unique_ptr<juce::FileOutputStream> fos (out.createOutputStream());
+    if (! fos) return juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel criar o ficheiro WAV.");
+    std::unique_ptr<juce::AudioFormatWriter> wr (wav.createWriterFor (fos.get(), kSr, 2, 24, {}, 0)); if (! wr) return juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel escrever o WAV.");
+    fos.release();
+    const float* chans[2] = { ol.data(), orr.data() }; if (! wr->writeFromFloatArrays (chans, 2, (int) total)) return juce::CharPointer_UTF8 ("Erro ao escrever o WAV.");
+    wr.reset();
+    resolveSamples();                                                                  // devolve os loops ao andamento do projeto
+    return {};
 }
 
 juce::String SynthKeyProcessor::getSampleId (int e) const { const juce::ScopedLock sl (libLock); return sampleId[e]; }

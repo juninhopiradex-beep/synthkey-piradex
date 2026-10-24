@@ -5,6 +5,7 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "Core/Samples.h"
+#include "Core/AudioToMidi.h"
 #include <cmath>
 
 namespace useraudio
@@ -42,6 +43,23 @@ inline std::vector<float> toMono (const sk::SampleData& d)
     std::vector<float> m = d.l;
     if (d.stereo()) for (size_t i = 0; i < m.size(); ++i) m[i] = 0.5f * (d.l[i] + d.r[i]);
     return m;
+}
+
+// "Loop_96bpm.wav", "Funk Loop 120 BPM", "bpm96", "kiz_92_bass" -> andamento; 0 se não houver
+inline double bpmFromName (const juce::String& stem)
+{
+    const auto s = stem.toLowerCase(); const int n = s.length();
+    auto num = [&] (int i, int& j) { j = i; int v = 0, d = 0; while (j < n && juce::CharacterFunctions::isDigit (s[j]) && d < 3) { v = v * 10 + (int) (s[j] - '0'); ++j; ++d; } return d ? v : -1; };
+    for (int i = 0; i < n; ++i)
+    {
+        if (i > 0 && juce::CharacterFunctions::isDigit (s[i - 1])) continue; int j; const int v = num (i, j); if (v < 0) continue;
+        if (j < n && juce::CharacterFunctions::isDigit (s[j])) continue;
+        int k = j; while (k < n && s[k] == ' ') ++k;
+        if (s.substring (k).startsWith ("bpm") && v >= 40 && v <= 300) return v;
+        int b = i - 1; while (b >= 0 && s[b] == ' ') --b;
+        if (b >= 2 && s.substring (b - 2, b + 1) == "bpm" && v >= 40 && v <= 300) return v;
+    }
+    return 0;
 }
 
 // "Piano_C#3.wav", "bass-a2", "Pad Eb4" → nota MIDI (C3 = 60, como no Ableton/FL); -1 se não houver
@@ -100,9 +118,14 @@ inline bool makeInstrument (const juce::File& f, sk::Library& lib, juce::String&
     // a altura medida manda (os nomes de oitava variam entre programas: C3 pode ser 130 ou 261 Hz); o nome só serve se a medição falhar
     int root = detectPitch (mono, sd->sampleRate); bool fixed = false;
     if (root < 0) { root = noteFromName (stem); if (root < 0) { fixed = true; root = 60; } }
+    // "loop" ou "96bpm" no nome: loop sincronizado com o projeto (bpm e tempos detetados; o nome manda no bpm)
+    const double nameBpm = bpmFromName (stem); const bool isLoop = nameBpm > 0 || juce::String (stem).containsIgnoreCase ("loop");
+    sk::a2m::LoopInfoA li; if (isLoop && sd->frames() > 0.5 * sd->sampleRate) li = sk::a2m::analyseLoop (mono, sd->sampleRate, nameBpm);
+    if (li.beats > 0) { fixed = true; root = 60; }
     sk::Instrument in; in.id = "user." + juce::String (stem).retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-# ").replaceCharacter (' ', '_').toStdString();
-    in.name = stem.toStdString(); in.cat = "Utilizador"; in.pack = "user"; in.fixedPitch = fixed;
+    in.name = stem.toStdString(); in.cat = li.beats > 0 ? "Loops" : "Utilizador"; in.pack = "user"; in.fixedPitch = fixed;
     sk::Zone z; z.data = lib.addData (sd); z.root = root; z.gain = std::min (4.0f, 0.9f / pk); z.file = f.getFileName().toStdString();
+    if (li.beats > 0) { z.loopBpm = (float) li.bpm; z.loopBeats = (float) li.beats; }
     in.zones.push_back (z); lib.inst.push_back (std::move (in)); return true;
 }
 }

@@ -16,12 +16,12 @@ public:
         : toast (std::move (toastFn)), prompt (std::move (promptFn))
     {
         for (auto* c : { (juce::Component*) &projBox, (juce::Component*) &styleBox, (juce::Component*) &list }) addAndMakeVisible (c);
-        for (auto* b : { &backBtn, &newBtn, &addWav, &addMulti, &addLoops, &addMidi, &addMine, &addPresets, &removeBtn, &catBtn, &nameBtn, &coverBtn, &genBtn, &installBtn, &openBtn }) addAndMakeVisible (b);
+        for (auto* b : { &backBtn, &newBtn, &addWav, &addMulti, &addLoops, &addMidi, &addMine, &addPresets, &removeBtn, &catBtn, &nameBtn, &loopBtn, &coverBtn, &genBtn, &installBtn, &openBtn }) addAndMakeVisible (b);
         for (auto* e : { &nameEd, &versionEd, &accentEd, &descEd }) { addAndMakeVisible (e); e->setFont (theme::font (13.5f)); }
         for (auto* t : { &kitTgl, &presetTgl }) addAndMakeVisible (t);
         backBtn.setButtonText (TX ("\xE2\x97\x82 CHAVES")); backBtn.onClick = [this] { if (onBack) onBack(); }; newBtn.setButtonText (TX ("NOVO PACK")); addWav.setButtonText (TX ("+ WAV (um por ficheiro)")); addMulti.setButtonText (TX ("+ MULTI-SAMPLE")); addLoops.setButtonText ("+ LOOPS");
         addMidi.setButtonText (TX ("+ MIDI \xE2\x86\x92 groove")); addMine.setButtonText (TX ("+ MEUS GROOVES")); addPresets.setButtonText (TX ("+ MEUS PRESETS"));
-        removeBtn.setButtonText ("REMOVER"); catBtn.setButtonText (TX ("CATEGORIA\xE2\x80\xA6")); nameBtn.setButtonText (TX ("NOME\xE2\x80\xA6")); coverBtn.setButtonText (TX ("CAPA\xE2\x80\xA6"));
+        removeBtn.setButtonText ("REMOVER"); catBtn.setButtonText (TX ("CATEGORIA\xE2\x80\xA6")); nameBtn.setButtonText (TX ("NOME\xE2\x80\xA6")); loopBtn.setButtonText (TX ("LOOP\xE2\x80\xA6")); coverBtn.setButtonText (TX ("CAPA\xE2\x80\xA6"));
         genBtn.setButtonText (TX ("GERAR PACK (.bfpack)")); installBtn.setButtonText (TX ("INSTALAR NO PLUGIN")); openBtn.setButtonText (TX ("ABRIR PASTA"));
         kitTgl.setButtonText (TX ("Criar kit de bateria automaticamente (pelos nomes: kick, snare, hat\xE2\x80\xA6)")); presetTgl.setButtonText (TX ("Criar um preset para cada instrumento"));
         for (auto* s : { "trap", "rnb", "afrobeat", "amapiano", "drill", "kizomba", "kuduro" }) styleIds.add (s);
@@ -37,7 +37,7 @@ public:
         newBtn.onClick = [this] { newProject(); };
         addWav.onClick = [this] { chooseAudio (sk::studio::ImportMode::OneShots); }; addMulti.onClick = [this] { chooseAudio (sk::studio::ImportMode::MultiSample); }; addLoops.onClick = [this] { chooseAudio (sk::studio::ImportMode::Loops); };
         addMidi.onClick = [this] { chooseMidi(); }; addMine.onClick = [this] { pickMyGroove(); }; addPresets.onClick = [this] { pickPresets(); };
-        removeBtn.onClick = [this] { removeSelected(); }; catBtn.onClick = [this] { changeCategory(); }; nameBtn.onClick = [this] { renameSelected(); };
+        removeBtn.onClick = [this] { removeSelected(); }; catBtn.onClick = [this] { changeCategory(); }; nameBtn.onClick = [this] { renameSelected(); }; loopBtn.onClick = [this] { editLoop(); };
         coverBtn.onClick = [this] { chooseCover(); }; genBtn.onClick = [this] { generate(); }; installBtn.onClick = [this] { install(); };
         openBtn.onClick = [this] { P.dir().revealToUser(); };
         genBtn.setTooltip (TX ("Cria o ficheiro .bfpack com os samples cifrados. Depois gera as chaves na aba CHAVES.")); installBtn.setTooltip (TX ("Instala o \xC3\xBAltimo pack gerado neste computador para o testares e gerares chaves"));
@@ -83,7 +83,7 @@ public:
         addMidi.setBounds (rx + 398, 30, 128, 28); addMine.setBounds (rx + 532, 30, 112, 28);
         addPresets.setBounds (rx + 650, 30, rw - 650, 28);
         list.setBounds (rx, 66, rw, 304);
-        removeBtn.setBounds (rx, 378, 90, 28); catBtn.setBounds (rx + 96, 378, 110, 28); nameBtn.setBounds (rx + 212, 378, 90, 28);
+        removeBtn.setBounds (rx, 378, 90, 28); catBtn.setBounds (rx + 96, 378, 110, 28); nameBtn.setBounds (rx + 212, 378, 90, 28); loopBtn.setBounds (rx + 308, 378, 90, 28);
         installBtn.setBounds (rx + rw - 330, 378, 170, 28); openBtn.setBounds (rx + rw - 154, 378, 154, 28);
     }
     // ---- arrastar ficheiros
@@ -162,7 +162,9 @@ private:
     void doAddAudio (const juce::Array<juce::File>& files, sk::studio::ImportMode mode, const juce::String& group)
     {
         const size_t before = P.insts.size(); auto warn = P.addAudio (files, mode, group); rebuildRows(); refreshStatus();
-        if (toast) toast (juce::String ((int) (P.insts.size() - before)) + TX (" instrumento(s) adicionado(s)") + (warn.isEmpty() ? juce::String() : TX ("  \xC2\xB7  ignorados: ") + warn.joinIntoString ("; ")), ! warn.isEmpty() && P.insts.size() == before);
+        juce::String lp; if (mode == sk::studio::ImportMode::Loops && P.insts.size() > before && ! P.insts.back().zones.empty() && P.insts.back().zones[0].loopBeats > 0)
+            lp = TX ("  \xC2\xB7  ") + juce::String (P.insts.back().zones[0].loopBpm, 1) + " bpm, " + juce::String (P.insts.back().zones[0].loopBeats) + TX (" tempos (confirma com LOOP\xE2\x80\xA6)");
+        if (toast) toast (juce::String ((int) (P.insts.size() - before)) + TX (" instrumento(s) adicionado(s)") + lp + (warn.isEmpty() ? juce::String() : TX ("  \xC2\xB7  ignorados: ") + warn.joinIntoString ("; ")), ! warn.isEmpty() && P.insts.size() == before);
     }
     void chooseMidi()
     {
@@ -215,7 +217,8 @@ private:
         g.setColour (juce::Colour (0x10FFFFFF)); g.drawHorizontalLine (h - 1, 0.0f, (float) w);
         juce::String tag, name, cat, info; juce::Colour tc = theme::accent();
         if (r.type == 0) { const auto& in = P.insts[(size_t) r.idx]; tag = in.cat == "Loops" ? "LOOP" : (in.fixed ? "ONE-SHOT" : (in.zones.size() > 1 ? "MULTI" : "TONAL")); name = TX (in.name.c_str()); cat = TX (in.cat.c_str());
-                       info = juce::String ((int) in.zones.size()) + (in.zones.size() == 1 ? TX (" zona") : TX (" zonas")); if (! in.fixed && in.zones.size() == 1) info += "  \xC2\xB7  " + juce::MidiMessage::getMidiNoteName (in.zones[0].root, true, true, 3); }
+                       info = juce::String ((int) in.zones.size()) + (in.zones.size() == 1 ? TX (" zona") : TX (" zonas")); if (! in.fixed && in.zones.size() == 1) info += TX ("  \xC2\xB7  ") + juce::MidiMessage::getMidiNoteName (in.zones[0].root, true, true, 3);
+                       if (in.zones.size() == 1 && in.zones[0].loopBeats > 0) info = juce::String (in.zones[0].loopBpm, 1) + TX (" bpm  \xC2\xB7  ") + juce::String (in.zones[0].loopBeats) + TX (" tempos"); }
         else if (r.type == 1) { const auto& gr = P.grooves[(size_t) r.idx]; tag = "GROOVE"; tc = theme::accent2(); name = TX (gr.name.c_str()); cat = TX (gr.kind.c_str()); info = juce::String (gr.bpm) + " bpm  \xC2\xB7  " + juce::String (gr.bars) + (gr.bars == 1 ? TX (" compasso") : TX (" compassos")); }
         else { tag = "PRESET"; tc = juce::Colour (0xFFFFB45F); name = TX (P.extraPresets[(size_t) r.idx].c_str()); cat = TX ("preset do utilizador"); }
         g.setColour (tc); g.setFont (theme::font (10.0f, true)); g.drawText (tag, 10, 0, 70, h, juce::Justification::centredLeft);
@@ -236,6 +239,24 @@ private:
         juce::PopupMenu m; for (int i = 0; i < 10; ++i) m.addItem (i + 1, TX (cats[i]));
         const int idx = rows[(size_t) s].idx;
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&catBtn), [this, idx] (int r) { if (r < 1 || idx >= (int) P.insts.size()) return; P.insts[(size_t) idx].cat = cats[r - 1]; if (std::string (cats[r - 1]) == "Loops") P.insts[(size_t) idx].fixed = true; commit(); });
+    }
+    void editLoop()
+    {
+        const int s = list.getSelectedRow(); if (s < 0 || s >= (int) rows.size() || rows[(size_t) s].type != 0 || ! prompt) { if (toast) toast (TX ("Escolhe um loop na lista."), true); return; }
+        const int idx = rows[(size_t) s].idx; auto& in = P.insts[(size_t) idx]; if (in.zones.size() != 1) { if (toast) toast (TX ("Esta fun\xC3\xA7\xC3\xA3o \xC3\xA9 para loops de uma s\xC3\xB3 zona."), true); return; }
+        const auto& z = in.zones[0]; const juce::String cur = z.loopBeats > 0 ? juce::String (z.loopBpm, 1) + " " + juce::String (z.loopBeats) : juce::String ("100 8");
+        prompt (TX ("Ajustar loop"), TX ("Andamento original em bpm e n\xC3\xBA" "mero de tempos do loop (4 tempos = 1 compasso). Ex.: 96 8. Escreve 0 para desligar o sincronismo."), cur, TX ("Guardar"), [this, idx] (const juce::String& txt) -> juce::String
+        {
+            auto tk = juce::StringArray::fromTokens (txt.trim().replaceCharacter (',', '.'), " ", ""); tk.removeEmptyStrings();
+            if (idx >= (int) P.insts.size() || P.insts[(size_t) idx].zones.empty()) return {};
+            auto& zz = P.insts[(size_t) idx].zones[0];
+            if (tk.size() == 1 && tk[0].getDoubleValue() == 0.0) { zz.loopBpm = 0; zz.loopBeats = 0; commit(); return {}; }
+            if (tk.size() != 2) return TX ("Escreve dois n\xC3\xBA" "meros: bpm e tempos (ex.: 96 8).");
+            const double bpm = tk[0].getDoubleValue(); const int beats = tk[1].getIntValue();
+            if (bpm < 40 || bpm > 300) return TX ("O andamento deve estar entre 40 e 300 bpm.");
+            if (beats < 1 || beats > 128) return TX ("Os tempos devem estar entre 1 e 128.");
+            zz.loopBpm = bpm; zz.loopBeats = beats; P.insts[(size_t) idx].fixed = true; commit(); return {};
+        });
     }
     void renameSelected()
     {
@@ -276,6 +297,6 @@ private:
     sk::studio::Project P; std::vector<std::string> projects; std::vector<Row> rows; juce::StringArray styleIds; juce::Image cover; juce::String statusText, lastSummary; juce::File lastFile;
     juce::Rectangle<int> left, right; bool dropHover = false; std::shared_ptr<juce::FileChooser> chooser;
     juce::ComboBox projBox, styleBox; juce::ListBox list; juce::TextEditor nameEd, versionEd, accentEd, descEd; juce::ToggleButton kitTgl, presetTgl;
-    juce::TextButton backBtn, newBtn, addWav, addMulti, addLoops, addMidi, addMine, addPresets, removeBtn, catBtn, nameBtn, coverBtn, genBtn, installBtn, openBtn;
+    juce::TextButton backBtn, newBtn, addWav, addMulti, addLoops, addMidi, addMine, addPresets, removeBtn, catBtn, nameBtn, loopBtn, coverBtn, genBtn, installBtn, openBtn;
 };
 }

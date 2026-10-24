@@ -10,6 +10,7 @@
 // =============================================================================
 #pragma once
 #include "GrooveJson.h"
+#include "LoopStretcher.h"
 #include "Licensing.h"
 #include "PackSpecs.h"
 #include "Preset.h"
@@ -77,6 +78,7 @@ inline std::string buildPack (const PackDef& def, const Library& lib, const std:
             jz.set ("loVel", json::Value::makeNumber (z.loVel)); jz.set ("hiVel", json::Value::makeNumber (z.hiVel));
             jz.set ("loopStart", json::Value::makeNumber (z.loopStart)); jz.set ("loopEnd", json::Value::makeNumber (z.loopEnd));
             jz.set ("gain", json::Value::makeNumber (z.gain)); jz.set ("rr", json::Value::makeNumber (z.rr));
+            if (z.loopBeats > 0) { jz.set ("loopBpm", json::Value::makeNumber (z.loopBpm)); jz.set ("loopBeats", json::Value::makeNumber (z.loopBeats)); }
             zs.arr.push_back (jz); ++zi;
         }
         ji.set ("zones", zs); insts.arr.push_back (ji);
@@ -174,10 +176,12 @@ inline bool loadLibrary (const zip::Reader& zr, const std::string& secret, Libra
                     z.loVel = (int) jz.getNumber ("loVel", 1); z.hiVel = (int) jz.getNumber ("hiVel", 127);
                     z.loopStart = (int) jz.getNumber ("loopStart", -1); z.loopEnd = (int) jz.getNumber ("loopEnd", -1);
                     z.gain = (float) jz.getNumber ("gain", 1.0); z.rr = (int) jz.getNumber ("rr", 0);
+                    z.loopBpm = (float) jz.getNumber ("loopBpm", 0); z.loopBeats = (float) jz.getNumber ("loopBeats", 0);
                     in.zones.push_back (z);
                 }
             lib.inst.push_back (std::move (in));
         }
+    LoopStretcher::get().registerLibrary (lib);
     out.absorb (std::move (lib)); return true;
 }
 

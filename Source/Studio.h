@@ -12,10 +12,11 @@
 #include "UserAudio.h"
 #include "Core/PresetBuilder.h"
 #include "Core/PresetCalib.h"
+#include "Core/AudioToMidi.h"
 
 namespace sk { namespace studio
 {
-struct StZone { std::string file; int root = 60, lo = 0, hi = 127, loVel = 1, hiVel = 127, rr = 0; };
+struct StZone { std::string file; int root = 60, lo = 0, hi = 127, loVel = 1, hiVel = 127, rr = 0; double loopBpm = 0; int loopBeats = 0; };   // loopBeats > 0: loop sincronizado com o projeto
 struct Inst { std::string slug, name, cat; bool fixed = false; std::vector<StZone> zones; };
 
 enum class ImportMode { OneShots, MultiSample, Loops };
@@ -94,6 +95,7 @@ struct Project
                 json::Value jz = json::Value::makeObject(); jz.set ("file", json::Value::makeString (z.file));
                 jz.set ("root", json::Value::makeNumber (z.root)); jz.set ("lo", json::Value::makeNumber (z.lo)); jz.set ("hi", json::Value::makeNumber (z.hi));
                 jz.set ("loVel", json::Value::makeNumber (z.loVel)); jz.set ("hiVel", json::Value::makeNumber (z.hiVel)); jz.set ("rr", json::Value::makeNumber (z.rr));
+                if (z.loopBeats > 0) { jz.set ("loopBpm", json::Value::makeNumber (z.loopBpm)); jz.set ("loopBeats", json::Value::makeNumber (z.loopBeats)); }
                 zs.arr.push_back (jz);
             }
             x.set ("zones", zs); ji.arr.push_back (x);
@@ -116,7 +118,8 @@ struct Project
             Inst in; in.slug = x.getString ("slug"); in.name = x.getString ("name"); in.cat = x.getString ("cat"); in.fixed = x.getBool ("fixed");
             if (auto* zs = x.find ("zones")) for (auto& jz : zs->arr)
             { StZone z; z.file = jz.getString ("file"); z.root = (int) jz.getNumber ("root", 60); z.lo = (int) jz.getNumber ("lo", 0); z.hi = (int) jz.getNumber ("hi", 127);
-              z.loVel = (int) jz.getNumber ("loVel", 1); z.hiVel = (int) jz.getNumber ("hiVel", 127); z.rr = (int) jz.getNumber ("rr", 0); in.zones.push_back (z); }
+              z.loVel = (int) jz.getNumber ("loVel", 1); z.hiVel = (int) jz.getNumber ("hiVel", 127); z.rr = (int) jz.getNumber ("rr", 0);
+              z.loopBpm = jz.getNumber ("loopBpm", 0); z.loopBeats = (int) jz.getNumber ("loopBeats", 0); in.zones.push_back (z); }
             p.insts.push_back (std::move (in));
         }
         if (auto* gs = v.find ("grooves")) for (auto& x : gs->arr) { Groove g; if (groovejson::fromJson (json::stringify (x, false), g)) p.grooves.push_back (std::move (g)); }
@@ -149,7 +152,7 @@ struct Project
         if (dst != src) { if (dst.existsAsFile()) dst = dst.getNonexistentSibling(); src.copyFileTo (dst); }
         return dst;
     }
-    struct Analysis { juce::File file; int root = 60; bool fixed = false; float peak = 0; juce::String err; };
+    struct Analysis { juce::File file; int root = 60; bool fixed = false; float peak = 0; juce::String err; double loopBpm = 0; int loopBeats = 0; bool bpmFromName = false; };
     static Analysis analyse (const juce::File& f)
     {
         Analysis a; a.file = f; sk::SampleData sd; a.err = useraudio::decode (f, sd); if (a.err.isNotEmpty()) return a;
@@ -157,7 +160,9 @@ struct Project
         if (a.peak < 1.0e-5f) { a.err = juce::String (juce::CharPointer_UTF8 ("Ficheiro em sil\xC3\xAAncio: ")) + f.getFileName(); return a; }
         int root = useraudio::detectPitch (useraudio::toMono (sd), sd.sampleRate);
         if (root < 0) root = useraudio::noteFromName (f.getFileNameWithoutExtension());
-        if (root < 0) { a.fixed = true; root = 60; } a.root = root; return a;
+        if (root < 0) { a.fixed = true; root = 60; } a.root = root;
+        const auto li = a2m::analyseLoop (useraudio::toMono (sd), sd.sampleRate, useraudio::bpmFromName (f.getFileNameWithoutExtension()));
+        a.loopBpm = li.bpm; a.loopBeats = li.beats; a.bpmFromName = li.fromName; return a;
     }
     // devolve mensagens de aviso (ficheiros ignorados); 'groupName' só serve em MultiSample
     juce::StringArray addAudio (const juce::Array<juce::File>& files, ImportMode mode, const juce::String& groupName, const juce::String& catOverride = {})
@@ -172,7 +177,7 @@ struct Project
             in.slug = uniqueSlug (slugify (a.file.getFileNameWithoutExtension())).toStdString();
             in.fixed = loop || a.fixed || drumKeyFromName (a.file.getFileNameWithoutExtension()) >= 0;      // bombo/caixa/hat… não acompanham a tecla
             in.cat = catOverride.isNotEmpty() ? catOverride.toStdString() : (loop ? "Loops" : guessCategory (a.file.getFileNameWithoutExtension(), a.fixed));
-            StZone z; z.file = dst.getFileName().toStdString(); z.root = a.root; in.zones.push_back (z); return in;
+            StZone z; z.file = dst.getFileName().toStdString(); z.root = a.root; if (loop) { z.loopBpm = a.loopBpm; z.loopBeats = a.loopBeats; } in.zones.push_back (z); return in;
         };
         if (mode == ImportMode::MultiSample)
         {
@@ -204,23 +209,30 @@ struct Project
     bool buildLibrary (Library& lib, juce::String& err) const
     {
         std::map<std::string, int> dataOf; Library local;
-        auto dataFor = [&] (const std::string& file, float& gain) -> int
+        auto dataFor = [&] (const std::string& file, float& gain, double loopBpm = 0, int loopBeats = 0) -> int
         {
-            auto it = dataOf.find (file);
+            const std::string key = loopBeats > 0 ? file + "|" + std::to_string (loopBeats) + "|" + std::to_string ((int) std::lround (loopBpm * 100)) : file;
+            auto it = dataOf.find (key);
             if (it == dataOf.end())
             {
                 auto sd = std::make_shared<SampleData>(); const auto e = useraudio::decode (sampleFile (file), *sd); if (e.isNotEmpty()) { err = e + " (" + juce::String (file) + ")"; return -1; }
+                if (loopBeats > 0 && loopBpm > 0)                                       // o loop tem de durar exatamente N tempos ao andamento indicado
+                {
+                    const size_t want = (size_t) std::max (64.0, std::floor (60.0 * loopBeats / loopBpm * sd->sampleRate + 0.5));
+                    if (sd->l.size() != want) { sd->l.resize (want, 0.0f); if (sd->stereo()) sd->r.resize (want, 0.0f); }
+                }
                 float pk = 0; for (float v : sd->l) pk = std::max (pk, std::fabs (v)); for (float v : sd->r) pk = std::max (pk, std::fabs (v));
-                gainOf[file] = std::min (4.0f, 0.9f / std::max (pk, 1.0e-4f)); it = dataOf.emplace (file, local.addData (sd)).first;
+                gainOf[key] = std::min (4.0f, 0.9f / std::max (pk, 1.0e-4f)); it = dataOf.emplace (key, local.addData (sd)).first;
             }
-            gain = gainOf[file]; return it->second;
+            gain = gainOf[key]; return it->second;
         };
         for (auto& in : insts)
         {
             Instrument x; x.id = id + "." + in.slug; x.name = in.name; x.cat = in.cat; x.pack = id; x.fixedPitch = in.fixed;
             for (auto& z : in.zones)
             {
-                sk::Zone q; float g = 1; q.data = dataFor (z.file, g); if (q.data < 0) return false;
+                sk::Zone q; float g = 1; q.data = dataFor (z.file, g, z.loopBpm, z.loopBeats); if (q.data < 0) return false;
+                if (z.loopBeats > 0 && z.loopBpm > 0) { q.loopBpm = (float) z.loopBpm; q.loopBeats = (float) z.loopBeats; }
                 q.root = z.root; q.loKey = z.lo; q.hiKey = z.hi; q.loVel = z.loVel; q.hiVel = z.hiVel; q.rr = z.rr; q.gain = g; q.file = z.file; x.zones.push_back (q);
             }
             local.inst.push_back (std::move (x));

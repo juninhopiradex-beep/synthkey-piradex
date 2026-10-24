@@ -114,6 +114,14 @@ public:
         g.setColour (juce::Colour (0xFF2A2C33)); g.strokePath (arcPath (R, -150.0f, 150.0f), juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         if (arcVal > 0.004f) theme::glowStroke (g, arcPath (R, -150.0f, -150.0f + 300.0f * arcVal), theme::accent(), 3.0f);
         if (posParam >= 0) { float lo = 0, hi = 0; if (modRangeFor (proc, posParam, lo, hi)) { const float a = juce::jlimit (0.0f, 1.0f, arcVal + lo), c = juce::jlimit (0.0f, 1.0f, arcVal + hi); if (c - a > 0.004f) theme::glowStroke (g, arcPath (R + 5.0f, -150.0f + 300.0f * a, -150.0f + 300.0f * c), theme::accent2(), 2.5f); } }
+        // ---- loop sincronizado: anel de fase (volta completa = 1 repeti\xC3\xA7\xC3\xA3o do loop)
+        const auto lp = proc.loopInfo(); const bool loopOn = (mode != 2 && type == 2 && lp.playing);
+        if (loopOn)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.10f)); g.drawEllipse (cx - R - 7.0f, cy - R - 7.0f, 2 * (R + 7.0f), 2 * (R + 7.0f), 1.0f);
+            for (int k = 0; k < 16; ++k) { const float deg = (float) k * 22.5f; g.setColour (juce::Colours::white.withAlpha (k % 4 == 0 ? 0.35f : 0.14f)); g.drawLine (juce::Line<float> (P2 (R + 4.0f, deg), P2 (R + (k % 4 == 0 ? 11.0f : 9.0f), deg)), 1.0f); }
+            const auto d = P2 (R + 7.0f, 360.0f * lp.phase); g.setColour (theme::accent2().withAlpha (0.35f)); g.fillEllipse (d.x - 6.0f, d.y - 6.0f, 12.0f, 12.0f); g.setColour (theme::accent2()); g.fillEllipse (d.x - 3.5f, d.y - 3.5f, 7.0f, 7.0f);
+        }
         // ---- disco
         const float rd = R - 9.0f;
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xFF23252C), cx, cy - rd * 0.2f, juce::Colour (0xFF08090B), cx, cy + rd, true)); g.fillEllipse (cx - rd, cy - rd, 2 * rd, 2 * rd);
@@ -157,7 +165,8 @@ public:
         juce::String l1, v1, l2, v2;
         if (mode == 2) { l1 = TX ("MESTRE"); v1 = juce::String (proc.getReal (P_MASTER_VOL), 1) + " dB"; l2 = TX ("QUALIDADE"); v2 = juce::StringArray::fromTokens (TX (kParams[P_QUALITY].choices), "|", "")[(int) proc.getReal (P_QUALITY)]; }
         else if (type == 1) { l1 = TX ("POSI\xC3\x87\xC3\x83O"); v1 = juce::String ((int) std::lround (arcVal * 100.0f)) + "%"; l2 = "FRAME"; v2 = juce::String (1 + (int) std::lround (arcVal * (Wavetables::kFrames - 1))) + " / " + juce::String (Wavetables::kFrames); }
-        else if (type == 2) { l1 = "SAMPLE"; v1 = proc.sampleDisplayName (E); l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB"; }
+        else if (type == 2) { l1 = "SAMPLE"; v1 = proc.sampleDisplayName (E); l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB";
+                       if (loopOn) { l2 = "LOOP"; v2 = juce::String (lp.srcBpm, 0) + juce::String (juce::CharPointer_UTF8 (" \xE2\x86\x92 ")) + juce::String (lp.hostBpm, 0) + " bpm"; } }
         else { l1 = "ONDA"; v1 = juce::StringArray::fromTokens (TX (kParams[P_A_WAVE].choices), "|", "")[(int) proc.getReal (P_A_WAVE + o)]; l2 = "UNISSON"; v2 = juce::String ((int) proc.getReal (P_A_UNI + o)); }
         auto lbl = [&] (juce::Rectangle<int> r, const juce::String& a, const juce::String& bb, juce::Justification j)
         { g.setColour (theme::dim()); g.setFont (theme::font (9.0f, true)); g.drawText (a, r.withHeight (11), j); g.setColour (juce::Colours::white); g.setFont (theme::font (12.0f, true)); g.drawFittedText (bb, r.withTrimmedTop (11).withHeight (15), j, 1, 0.75f); };
@@ -173,7 +182,15 @@ public:
                 g.setColour (srcColour (src)); g.setFont (theme::font (10.5f)); g.drawFittedText (juce::String (juce::CharPointer_UTF8 ("\xE2\x97\x8F ")) + shortSrcName (src) + " \xC2\xB7 " + (amt >= 0 ? "+" : "") + juce::String ((int) std::lround (amt * 100.0f)) + "%", getWidth() - 110, 22 + line * 14, 100, 14, juce::Justification::centredRight, 1, 0.8f); ++line;
             }
         g.setColour (theme::dim()); g.setFont (theme::font (9.5f, true)); g.drawText (juce::String (proc.voiceCount.load()) + (proc.voiceCount.load() == 1 ? " VOZ" : " VOZES"), getWidth() - 100, getHeight() - 20, 90, 12, juce::Justification::centredRight);
-        if (! active && (mode == 2 || type == 2)) { g.setColour (theme::dim()); g.setFont (theme::font (10.5f)); g.drawText (TX ("toca uma nota\xE2\x80\xA6"), 0, getHeight() - 20, getWidth(), 12, juce::Justification::centred); }
+        if (loopOn)
+        {
+            const float ratio = lp.srcBpm > 0 ? lp.hostBpm / lp.srcBpm : 1.0f; juce::String t;
+            if (std::fabs (ratio - 1.0f) < 0.004f) t = TX ("LOOP \xC2\xB7 j\xC3\xA1 est\xC3\xA1 no andamento do projeto");
+            else if (! lp.stretched) t = TX ("LOOP \xC2\xB7 a ajustar ao projeto\xE2\x80\xA6");
+            else t = TX ("LOOP \xC2\xB7 esticado \xC3\x97") + juce::String (ratio, 2) + (lp.hostRunning ? TX (" \xC2\xB7 sincronizado com o projeto") : TX (" \xC2\xB7 projeto parado"));
+            g.setColour (theme::accent2()); g.setFont (theme::font (10.0f, true)); g.drawText (t, 0, getHeight() - 20, getWidth() - 110, 12, juce::Justification::centred);
+        }
+        else if (! active && (mode == 2 || type == 2)) { g.setColour (theme::dim()); g.setFont (theme::font (10.5f)); g.drawText (TX ("toca uma nota\xE2\x80\xA6"), 0, getHeight() - 20, getWidth(), 12, juce::Justification::centred); }
     }
 private:
     static bool dstBelongs (int dst, int E)
