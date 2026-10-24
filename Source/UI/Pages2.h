@@ -143,18 +143,28 @@ public:
     {
         auto r = getLocalBounds().toFloat(); const auto accent = juce::Colour::fromString ("FF" + juce::String (e.accent).substring (1));
         theme::drawCard (g, r, 12.0f, true);
-        auto cover = r.reduced (4.0f).withHeight (120.0f);
-        { juce::Path clip; clip.addRoundedRectangle (cover, 9.0f); juce::Graphics::ScopedSaveState ss (g); g.reduceClipRegion (clip);
-          if (e.cover.isValid())
-          {
-              const float sc = std::max (cover.getWidth() / (float) e.cover.getWidth(), cover.getHeight() / (float) e.cover.getHeight());
-              const float w = (float) e.cover.getWidth() * sc, h = (float) e.cover.getHeight() * sc;
-              g.setOpacity (e.installed && ! status.usable() ? 0.62f : 1.0f);
-              g.drawImage (e.cover, juce::Rectangle<float> (cover.getCentreX() - w * 0.5f, cover.getCentreY() - h * 0.5f, w, h), juce::RectanglePlacement::stretchToFit);
-          }
-          g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0, cover.getY() + 50, juce::Colour (0xCC050610), 0, cover.getBottom(), false)); g.fillRect (cover); }
-        g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (cover, 9.0f, 1.2f);
-        // selo de estado
+        // capa inteira (sem cortes): proporção original centrada; as laterais levam a própria capa desfocada/escurecida
+        const auto strip = juce::Rectangle<float> (r.getX() + 4.0f, r.getY() + 4.0f, r.getWidth() - 8.0f, kCoverH);
+        auto cover = strip;
+        if (e.cover.isValid())
+        {
+            const float ar = (float) e.cover.getWidth() / (float) e.cover.getHeight();
+            cover = juce::Rectangle<float> (0, 0, std::min (strip.getWidth(), strip.getHeight() * ar), std::min (strip.getHeight(), strip.getWidth() / ar)).withCentre (strip.getCentre());
+        }
+        {
+            juce::Path clip; clip.addRoundedRectangle (strip, 9.0f); juce::Graphics::ScopedSaveState ss (g); g.reduceClipRegion (clip);
+            g.setColour (juce::Colour (0xFF06070E)); g.fillRect (strip);
+            if (e.cover.isValid())
+            {
+                const float sc = std::max (strip.getWidth() / (float) e.cover.getWidth(), strip.getHeight() / (float) e.cover.getHeight());
+                const float w = (float) e.cover.getWidth() * sc, h = (float) e.cover.getHeight() * sc;
+                g.setOpacity (0.28f); g.drawImage (e.cover, juce::Rectangle<float> (strip.getCentreX() - w * 0.5f, strip.getCentreY() - h * 0.5f, w, h), juce::RectanglePlacement::stretchToFit);
+                g.setOpacity (e.installed && ! status.usable() ? 0.62f : 1.0f);
+                g.drawImage (e.cover, cover, juce::RectanglePlacement::stretchToFit); g.setOpacity (1.0f);
+            }
+        }
+        g.setColour (accent.withAlpha (0.9f)); g.drawRoundedRectangle (strip, 9.0f, 1.2f);
+        // estado (esquerda) e contagem (direita)
         juce::String tx; juce::Colour col = theme::dim();
         using A = sk::lic::Access;
         if (! e.installed) { tx = TX ("N\xC3\x83O INSTALADO"); }
@@ -168,18 +178,15 @@ public:
             case A::Expired: tx = "EXPIRADO"; col = theme::bad(); break;
             case A::Locked:  tx = TX ("\xF0\x9F\x94\x92 BLOQUEADO"); col = theme::warn(); break;
         }
-        g.setFont (theme::font (10.5f, true)); const int bw = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), tx) + 18; auto badge = juce::Rectangle<float> (cover.getRight() - (float) bw - 8, cover.getY() + 8, (float) bw, 20.0f);
-        g.setColour (juce::Colour (0xCC050610)); g.fillRoundedRectangle (badge, 10.0f); g.setColour (col); g.drawRoundedRectangle (badge, 10.0f, 1.0f); g.drawText (tx, badge.toNearestInt(), juce::Justification::centred);
-        // nome
-        g.setColour (juce::Colours::white); g.setFont (theme::font (17.0f, true)); g.drawText (TX (e.name.c_str()), (int) cover.getX() + 10, (int) cover.getBottom() - 30, (int) cover.getWidth() - 20, 24, juce::Justification::centredLeft);
-        g.setColour (theme::dim()); g.setFont (theme::font (11.0f));
-        g.drawFittedText (TX (e.desc.c_str()), (int) r.getX() + 12, (int) cover.getBottom() + 4, (int) r.getWidth() - 24, 34, juce::Justification::topLeft, 2, 0.9f);
-        if (e.installed) { g.setColour (juce::Colours::white.withAlpha (0.85f)); g.setFont (theme::font (10.5f));
-        g.drawText (juce::String (e.insts.size()) + " inst.  " + TX ("\xC2\xB7") + "  " + juce::String (e.presetCount) + " presets", (int) cover.getX() + 10, (int) cover.getBottom() - 30, (int) cover.getWidth() - 20, 24, juce::Justification::centredRight); }
+        const int ty = (int) strip.getBottom() + 4;
+        g.setFont (theme::font (10.5f, true)); g.setColour (col); g.drawText (tx, (int) r.getX() + 10, ty, (int) r.getWidth() / 2, 14, juce::Justification::centredLeft);
+        if (e.installed) { g.setColour (theme::dim()); g.setFont (theme::font (10.5f));
+            g.drawText (juce::String (e.insts.size()) + " inst.  " + TX ("\xC2\xB7") + "  " + juce::String (e.presetCount) + " presets", (int) r.getX() + (int) r.getWidth() / 2, ty, (int) r.getWidth() / 2 - 10, 14, juce::Justification::centredRight); }
     }
+    static constexpr float kCoverH = 156.0f;
     void resized() override
     {
-        auto b = getLocalBounds().reduced (10, 0).removeFromBottom (40).withTrimmedBottom (8);
+        auto b = getLocalBounds().reduced (10, 0).removeFromBottom (26).withTrimmedBottom (4);
         if (secondary.isVisible()) { auto l = b.removeFromLeft (b.getWidth() * 55 / 100 - 3); primary.setBounds (l); b.removeFromLeft (6); secondary.setBounds (b); }
         else primary.setBounds (b);
     }
@@ -235,11 +242,11 @@ public:
         for (auto& e : PackHub::get().entries())
         {
             auto* c = new PackCard (p, s, e.id); cards.add (c); addAndMakeVisible (c);
-            const int col = i % 4, row = i / 4; c->setBounds (col * 291, row * 214, 283, 206); ++i;
+            const int col = i % 4, row = i / 4; c->setBounds (col * 291, row * 214, 283, 210); ++i;
         }
         install.setButtonText (TX ("INSTALAR PACK (.bfpack)\xE2\x80\xA6")); folder.setButtonText (TX ("ABRIR PASTA DE PACKS"));
         addAndMakeVisible (install); addAndMakeVisible (folder);
-        install.setBounds (0, 424, 230, 28); folder.setBounds (238, 424, 200, 28);
+        install.setBounds (0, 428, 230, 24); folder.setBounds (238, 428, 200, 24);
         install.onClick = [this] { chooseFile(); };
         folder.onClick = [] { skpaths::userPacks().revealToUser(); };
     }
@@ -247,7 +254,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.setColour (theme::dim()); g.setFont (theme::font (11.5f));
-        g.drawText (TX ("Arraste ficheiros .bfpack para a janela do plugin \xC2\xB7 ") + skpaths::userPacks().getFullPathName(), 450, 424, getWidth() - 450, 28, juce::Justification::centredLeft);
+        g.drawText (TX ("Arraste ficheiros .bfpack para a janela do plugin \xC2\xB7 ") + skpaths::userPacks().getFullPathName(), 450, 428, getWidth() - 450, 24, juce::Justification::centredLeft);
     }
     void rebuildIfNeeded()
     {
