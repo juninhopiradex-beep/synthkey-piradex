@@ -70,7 +70,7 @@ inline constexpr int kNumDivs = 16;
 #define SK_CHORDS "Desligado|Oitava|Quinta|Maior|Menor|Maj7|Min7|Dom7|Maj9|Min9|Sus2|Sus4|Diatónico 3|Diatónico 7|Diatónico 9"
 #define SK_SCALES "Desligada|Maior|Menor natural|Dórico|Frígio|Lídio|Mixolídio|Menor harmónica|Pentatónica maior|Pentatónica menor|Blues"
 #define SK_KEYS "Dó|Dó#|Ré|Ré#|Mi|Fá|Fá#|Sol|Sol#|Lá|Lá#|Si"
-#define SK_ARPPATTERNS "Liso|Trap Hi-Hat|R&B Quebrado|Afrobeat Sincopado|Amapiano Groove|Drill Slides|Kizomba Zouk|Kuduro"
+#define SK_ARPPATTERNS "Liso|Trap Hi-Hat|R&B Quebrado|Afrobeats Sincopado|Amapiano Groove|Drill Slides|Kizomba Zouk|Kuduro"
 
 // ----------------------------- grupos repetidos -------------------------------
 #define SK_ENGINE(X, E, id, NM, onDef, typeDef) \

@@ -64,7 +64,7 @@ a ativação online está prevista para a v1.1.
 * Separador **VISUAL**: osciloscópio, espectro, curva dos filtros e wavetable em 3D.
 * **Anéis de modulação** nos botões: mostram o que a matriz faz a cada parâmetro.
 * **Navegador de presets** (clique no nome do preset): pesquisa por nome/estilo/etiqueta, filtros por pack e categoria, favoritos (★).
-* Separador **GROOVES**: 56 grooves, linhas de baixo, progressões de acordes e melodias por estilo (Trap, R&B, Afrobeat, Amapiano, Drill, Kizomba, Kuduro), com reprodução interna, escolha do tom e do BPM, **arrastar MIDI para o DAW** e botão **MODO ESTILO**.
+* Separador **GROOVES**: 56 grooves, linhas de baixo, progressões de acordes e melodias por estilo (Trap, R&B, Afrobeats, Amapiano, Drill, Kizomba, Kuduro), com reprodução interna, escolha do tom e do BPM, **arrastar MIDI para o DAW** e botão **MODO ESTILO**.
 * Correção: o modo "Reverso" dos samples agora toca.
 
 ## v1.1.1

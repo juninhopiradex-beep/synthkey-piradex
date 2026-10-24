@@ -209,7 +209,7 @@ public:
     GroovesPage (SynthKeyProcessor& p, Services& s) : Page (p), svc (s)
     {
         static const char* styles[8] = { "todos", "trap", "rnb", "afrobeat", "amapiano", "drill", "kizomba", "kuduro" };
-        static const char* labels[8] = { "TODOS", "TRAP", "R&B", "AFROBEAT", "AMAPIANO", "DRILL", "KIZOMBA", "KUDURO" };
+        static const char* labels[8] = { "TODOS", "TRAP", "R&B", "AFROBEATS", "AMAPIANO", "DRILL", "KIZOMBA", "KUDURO" };
         for (int i = 0; i < 8; ++i)
         {
             styleIds.push_back (styles[i]); auto* b = styleBtns.add (new juce::TextButton (labels[i])); addAndMakeVisible (b);
