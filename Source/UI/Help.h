@@ -1,5 +1,5 @@
 // =============================================================================
-//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.3)
+//  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.4)
 // =============================================================================
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -8,7 +8,7 @@
 
 namespace ui
 {
-inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v13.seen"); }
+inline juce::File helpSeenFile() { return skpaths::userDir().getChildFile ("help_v14.seen"); }
 
 class HelpOverlay : public juce::Component
 {
@@ -27,6 +27,9 @@ public:
         struct Item { const char* head; const char* body; };
         static const Item items[] = {
             { "\xE2\x9C\xA6 DESCREVER SOM",   "Escreve o que queres \xE2\x80\x94 \"baixo escuro e agressivo\", \"pad quente e largo\", \"pluck brilhante curto\", \"808 drill\" \xE2\x80\x94 no bot\xC3\xA3o-orbe da barra de cima e o SYNTHKEY monta um preset. Carrega outra vez para variantes." },
+            { "CAMADAS (GROOVES)", "No separador GROOVES escolhe o som do groove (Auto = kit de bateria do estilo, Igual ao teu som, ou qualquer preset) e o volume. O groove toca com o seu pr\xC3\xB3prio som enquanto tu tocas outro no teclado." },
+            { "EDITOR + MIDI",                "Clica na grelha para criar notas, numa nota para a apagar; arrasta na vertical para a velocidade. NOVO, IMPORTAR MIDI (ou arrasta um .mid) e MEUS guardam na tua pasta; os de f\xC3\xA1" "brica geram uma c\xC3\xB3pia." },
+            { "EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO", "Na zona ADMIN (EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO): junta samples, loops, multi-samples, MIDI e presets, e gera um pack .bfpack para um estilo. INSTALAR NO PLUGIN usa-o logo. Novos kits de bateria B e C, vozes, percuss\xC3\xA3o e camadas em cada estilo." },
             { "ECR\xC3\x83 SOM (ORBIT)",       "Tudo numa vista: origens \xC3\xA0 esquerda, oscilador (separadores A, B, SUB + RU\xC3\x8D" "DO, VOZES), filtros, volume, efeitos e arpejador ao centro, matriz e macros \xC3\xA0 direita. O orbe mostra o espectro e a onda em tempo real." },
             { "ARRASTAR PARA MODULAR",        "Pega numa origem (LFO, envelope, STEP, DESENHO...) e larga-a em cima de qualquer potenci\xC3\xB3metro: aparece um anel com a amplitude. As origens em uso ficam iluminadas." },
             { "MATRIZ COMPACTA",              "Clica na origem ou no destino de uma linha para escolher; arrasta a barra para a quantidade (duplo clique = 0, bot\xC3\xA3o direito = limpar a linha). A lista completa (16) est\xC3\xA1 no separador MATRIZ." },
@@ -36,7 +39,7 @@ public:
         g.fillAll (juce::Colour (0xD0050610));
         theme::drawCard (g, card.toFloat(), 16.0f, true);
         g.setColour (theme::accent()); g.fillRoundedRectangle ((float) card.getX() + 24, (float) card.getY() + 26, 3.0f, 20.0f, 1.5f);
-        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.3"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
+        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.4"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
         int y = card.getY() + 66;
         for (auto& it : items)
         {
@@ -47,7 +50,7 @@ public:
     }
     void resized() override
     {
-        card = juce::Rectangle<int> (0, 0, 860, 520).withCentre (getLocalBounds().getCentre());
+        card = juce::Rectangle<int> (0, 0, 860, 690).withCentre (getLocalBounds().getCentre());
         close.setBounds (card.getRight() - 24 - 210, card.getBottom() - 54, 210, 34);
     }
     void mouseDown (const juce::MouseEvent& e) override { if (! card.contains (e.getPosition())) dismiss(); }

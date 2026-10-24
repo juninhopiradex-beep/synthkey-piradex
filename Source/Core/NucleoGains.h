@@ -88,5 +88,11 @@ inline const std::pair<const char*, float> kNucleoGains[] =
     { "Sirene Analógica", 6.00f },
     { "Metais Sintéticos", -1.74f },
     { "Brass Stab", 0.91f },
+    { "Kit Núcleo B", 0.59f },
+    { "Kit Núcleo C", 0.80f },
+    { "Sino + Pad Etéreo", -0.09f },
+    { "Piano + Cordas Suaves", -0.01f },
+    { "Voz + Sub", 0.20f },
+    { "Stab + Sino", 4.82f },
 };
 }} // namespace sk::presets

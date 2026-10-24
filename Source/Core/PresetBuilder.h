@@ -325,8 +325,9 @@ inline std::vector<Preset> kuduro()
 }
 
 #include "PresetsMore.inc"
+#include "PresetsKits.inc"
 
-inline std::vector<Preset> forPack (const std::string& id)
+inline std::vector<Preset> forPackBase (const std::string& id)
 {
     auto cat = [] (std::vector<Preset> a, std::vector<Preset> b) { a.insert (a.end(), std::make_move_iterator (b.begin()), std::make_move_iterator (b.end())); return a; };
     if (id == "nucleo") return cat (nucleo(), nucleoMore());
@@ -338,6 +339,13 @@ inline std::vector<Preset> forPack (const std::string& id)
     if (id == "kizomba") return cat (kizomba(), kizombaMore());
     if (id == "kuduro") return cat (kuduro(), kuduroMore());
     return {};
+}
+inline std::vector<Preset> forPack (const std::string& id)
+{
+    auto v = forPackBase (id);
+    for (auto* more : { &kitVariants, &extrasMore })
+    { auto x = (*more) (id); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
+    return v;
 }
 }} // namespace sk::presets
 

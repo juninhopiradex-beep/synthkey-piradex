@@ -11,7 +11,7 @@ struct KitKey { int key; const char* inst; int variant; };
 
 struct PackDef
 {
-    std::string id, name, style, desc, version = "1.1.0";
+    std::string id, name, style, desc, version = "1.2.0";
     bool core = false;                    // Núcleo: incluído, nunca bloqueado
     std::vector<synth::InstSpec> insts;
     std::vector<KitKey> kit;
@@ -63,7 +63,8 @@ inline std::vector<PackDef> buildPackDefs()
         T ("bell", "Sino Escuro", "Mallets", G_BELL, 2.6f, 0.9f, 0, 0, 60, 84, 4), T ("pluck", "Pluck Gelado", "Teclas", G_PLUCK, 0.8f, 0.35f, 1.6f, 0, 36, 72, 6),
         T ("pad", "Pad Coral Escuro", "Pads", G_PAD, 7.0f, 18.0f, 0.15f, 0, 36, 60, 12), T ("vox", "Voz Ah", "Vozes", G_VOX, 0, 1.2f, 1.0f, 1, 55, 79, 6),
         T ("stab", "Stab Duro", "Sintetizador", G_STAB, 0.5f, 2600, 0.8f, 0, 48, 72, 6),
-        D ("riser", "Subida", "Efeitos", G_RISER, 2.6f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.4f, 0, 0, 0, 1) };
+        D ("riser", "Subida", "Efeitos", G_RISER, 2.6f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.4f, 0, 0, 0, 1),
+        T ("voxee", "Voz Ee", "Vozes", G_VOX, 2, 1.1f, 1.0f, 1, 55, 79, 6) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 46, "ohat", 0 } };
       v.push_back (p); }
 
@@ -77,7 +78,8 @@ inline std::vector<PackDef> buildPackDefs()
         D ("rim", "Rimshot", "Bateria", G_RIM, 820, 0, 0, 0, 2), D ("clap", "Palmas", "Bateria", G_CLAP, 0.2f, 1.3f, 0, 0, 2),
         D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.04f, 0.9f, 0, 0, 3), D ("shaker", "Shaker", "Percussão", G_SHAKER, 0.2f, 0.9f, 0, 0, 2),
         T ("vox", "Voz Ah", "Vozes", G_VOX, 0, 0.9f, 1.0f, 0, 48, 76, 4), T ("voxoo", "Coro Oo", "Vozes", G_VOX, 4, 1.8f, 1.0f, 1, 48, 72, 6),
-        T ("guitar", "Guitarra Limpa", "Teclas", G_PLUCK, 1.4f, 0.5f, 2.0f, 0, 40, 76, 6), T ("bell", "Sino Suave", "Mallets", G_BELL, 2.0f, 0.8f, 0, 0, 60, 84, 6) };
+        T ("guitar", "Guitarra Limpa", "Teclas", G_PLUCK, 1.4f, 0.5f, 2.0f, 0, 40, 76, 6), T ("bell", "Sino Suave", "Mallets", G_BELL, 2.0f, 0.8f, 0, 0, 60, 84, 6),
+        T ("voxeh", "Voz Eh", "Vozes", G_VOX, 1, 0.9f, 1.0f, 0, 48, 76, 4), T ("voxee", "Coro Ee", "Vozes", G_VOX, 2, 1.8f, 1.0f, 1, 48, 72, 6) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 } };
       v.push_back (p); }
 
@@ -93,7 +95,9 @@ inline std::vector<PackDef> buildPackDefs()
         T ("guitar", "Guitarra Afro", "Teclas", G_PLUCK, 1.0f, 0.75f, 1.6f, 0, 40, 76, 4), T ("bass", "Baixo Elétrico", "Baixo", G_BASSG, 1.0f, 0.2f, 1.3f, 0, 28, 52, 4),
         T ("kalimba", "Kalimba", "Mallets", G_KALIMBA, 1.6f, 0, 0, 0, 60, 84, 4), T ("pad", "Pad Quente", "Pads", G_PAD, 6.0f, 11.0f, 0.3f, 0, 36, 60, 12),
         T ("vox", "Voz Oh", "Vozes", G_VOX, 3, 0.7f, 1.0f, 0, 48, 72, 6), T ("horn", "Metais", "Sintetizador", G_STAB, 0.55f, 2600, 0.5f, 0, 48, 72, 6),
-        D ("whistle", "Apito", "Efeitos", G_WHISTLE, 2400, 0.6f, 0, 0, 1) };
+        D ("whistle", "Apito", "Efeitos", G_WHISTLE, 2400, 0.6f, 0, 0, 1),
+        D ("clave", "Clave", "Percussão", G_RIM, 1750, 0, 0, 0, 3), D ("timbal", "Timbal", "Percussão", G_CONGA, 560, 0.1f, 0.45f, 0, 3),
+        D ("pandeireta", "Pandeireta", "Percussão", G_SHAKER, 0.28f, 1.45f, 0, 0, 3), T ("voxeh", "Voz Eh", "Vozes", G_VOX, 1, 0.7f, 1.0f, 0, 48, 72, 6) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 43, "congalo", 0 }, { 44, "shaker", 0 }, { 45, "congahi", 0 }, { 46, "ohat", 0 }, { 47, "bongo", 0 } };
       v.push_back (p); }
 
@@ -109,7 +113,9 @@ inline std::vector<PackDef> buildPackDefs()
         T ("piano", "Piano", "Teclas", G_PIANO, 0.5f, 2.6f, 0, 0, 48, 84, 4), T ("keys", "Teclas Jazz", "Teclas", G_EP, 0.55f, 2.6f, 0.3f, 0, 48, 84, 6),
         T ("pad", "Pad Aéreo", "Pads", G_PAD, 7.0f, 14.0f, 0.35f, 0, 48, 72, 12), T ("chopah", "Vocal Chop Ah", "Vozes", G_VOX, 0, 0.55f, 0.5f, 0, 55, 79, 4),
         T ("chopoh", "Vocal Chop Oh", "Vozes", G_VOX, 3, 0.55f, 0.5f, 0, 55, 79, 4), T ("bass", "Baixo Amapiano", "Baixo", G_SUB, 1.3f, 0.9f, 0, 0, 29, 50, 3),
-        D ("whistle", "Apito", "Efeitos", G_WHISTLE, 2200, 0.7f, 0, 0, 1), D ("riser", "Subida", "Efeitos", G_RISER, 2.4f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 1) };
+        D ("whistle", "Apito", "Efeitos", G_WHISTLE, 2200, 0.7f, 0, 0, 1), D ("riser", "Subida", "Efeitos", G_RISER, 2.4f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 1),
+        T ("chopeh", "Vocal Chop Eh", "Vozes", G_VOX, 1, 0.55f, 0.5f, 0, 55, 79, 4), T ("chopee", "Vocal Chop Ee", "Vozes", G_VOX, 2, 0.55f, 0.5f, 0, 55, 79, 4),
+        D ("conga", "Conga", "Percussão", G_CONGA, 250, 0.2f, 0.4f, 0, 3) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 }, { 46, "ohat", 0 }, { 47, "shakerl", 0 } };
       v.push_back (p); }
 
@@ -124,7 +130,8 @@ inline std::vector<PackDef> buildPackDefs()
         D ("tom", "Tom", "Bateria", G_TOM, 100, 0.3f, 0.2f, 0, 2),
         T ("bell", "Sino Frio", "Mallets", G_BELL, 3.0f, 0.8f, 0, 0, 48, 72, 4), T ("pad", "Pad Sombrio", "Pads", G_PAD, 7.0f, 18.0f, 0.1f, 0, 36, 60, 12),
         T ("pluck", "Pluck Sombrio", "Teclas", G_PLUCK, 0.7f, 0.3f, 1.4f, 0, 36, 72, 6), T ("vox", "Voz Oh", "Vozes", G_VOX, 3, 1.0f, 1.0f, 1, 55, 79, 6),
-        D ("riser", "Subida", "Efeitos", G_RISER, 2.6f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.4f, 0, 0, 0, 1) };
+        D ("riser", "Subida", "Efeitos", G_RISER, 2.6f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.4f, 0, 0, 0, 1),
+        T ("voxah", "Voz Ah", "Vozes", G_VOX, 0, 1.0f, 1.0f, 1, 55, 79, 6) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 46, "ohat", 0 } };
       v.push_back (p); }
 
@@ -138,7 +145,8 @@ inline std::vector<PackDef> buildPackDefs()
         D ("kick", "Bombo Suave", "Bateria", G_KICK, 125, 50, 0.03f, 0.26f, 2), D ("snare", "Caixa Suave", "Bateria", G_SNARE, 185, 0.55f, 0.13f, 0.5f, 2),
         D ("rim", "Rimshot", "Bateria", G_RIM, 880, 0, 0, 0, 2), D ("clap", "Palmas", "Bateria", G_CLAP, 0.2f, 1.2f, 0, 0, 1),
         D ("guiro", "Guiro", "Percussão", G_SHAKER, 0.2f, 0.8f, 0, 0, 3), D ("conga", "Conga", "Percussão", G_CONGA, 240, 0.22f, 0.4f, 0, 2),
-        D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.04f, 0.9f, 0, 0, 2), D ("riser", "Subida", "Efeitos", G_RISER, 2.4f, 0, 0, 0, 1) };
+        D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.04f, 0.9f, 0, 0, 2), D ("riser", "Subida", "Efeitos", G_RISER, 2.4f, 0, 0, 0, 1),
+        T ("voxoh", "Voz Oh", "Vozes", G_VOX, 3, 0.9f, 1.0f, 0, 48, 76, 4), D ("clave", "Clave", "Percussão", G_RIM, 1650, 0, 0, 0, 2) };
       p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 44, "guiro", 0 }, { 45, "conga", 0 } };
       v.push_back (p); }
 
@@ -152,7 +160,8 @@ inline std::vector<PackDef> buildPackDefs()
         T ("stab", "Stab Serrilhado", "Sintetizador", G_STAB, 0.5f, 3500, 0.8f, 0, 36, 72, 3), T ("bass", "Baixo Agressivo", "Baixo", G_SUB, 1.0f, 1.0f, 0, 0, 24, 48, 3),
         T ("acid", "Pluck Ácido", "Sintetizador", G_PLUCK, 0.35f, 1.0f, 1.0f, 0, 36, 72, 6), T ("siren", "Sirene", "Efeitos", G_SIREN, 1.0f, 0, 0, 0, 48, 72, 12),
         T ("shout", "Voz Hey", "Vozes", G_VOX, 0, 0.35f, 0.3f, 0, 55, 67, 6), D ("whistle", "Apito", "Efeitos", G_WHISTLE, 2600, 0.5f, 0, 0, 1),
-        D ("riser", "Subida", "Efeitos", G_RISER, 2.2f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 2) };
+        D ("riser", "Subida", "Efeitos", G_RISER, 2.2f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 2),
+        T ("shout2", "Voz Ey", "Vozes", G_VOX, 1, 0.35f, 0.3f, 0, 55, 67, 6), D ("conga", "Conga", "Percussão", G_CONGA, 260, 0.18f, 0.5f, 0, 3) };
       p.kit = { { 36, "kick", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 46, "ohat", 0 } };
       v.push_back (p); }
     return v;
@@ -163,20 +172,26 @@ inline void buildPackLibrary (const PackDef& p, Library& lib)
 {
     Library local;
     for (const auto& s : p.insts) synth::addInstrument (local, s, p.id);
-    // kit: usa o 1.º sample de cada instrumento de bateria/percussão
+    // kits: A usa a variante 0 de cada instrumento, B a 1 e C a 2 (cada variante é um sample gerado com semente diferente)
     if (! p.kit.empty())
     {
-        Instrument kit; kit.id = p.id + ".kit"; kit.name = "Kit de Bateria"; kit.cat = "Bateria"; kit.pack = p.id; kit.fixedPitch = true;
-        for (const auto& k : p.kit)
+        std::vector<Instrument> kits;
+        for (int var = 0; var < 3; ++var)
         {
-            const int ii = local.indexOf (p.id + "." + k.inst);
-            if (ii < 0) continue;
-            const auto& src = local.inst[(size_t) ii];
-            const auto& sz = src.zones[(size_t) std::min ((int) src.zones.size() - 1, k.variant)];
-            Zone z = sz; z.loKey = z.hiKey = k.key; z.root = k.key; z.rr = 0;
-            kit.zones.push_back (z);
+            Instrument kit; kit.id = p.id + (var == 0 ? ".kit" : (var == 1 ? ".kit2" : ".kit3")); kit.name = var == 0 ? "Kit de Bateria" : (var == 1 ? "Kit de Bateria B" : "Kit de Bateria C");
+            kit.cat = "Bateria"; kit.pack = p.id; kit.fixedPitch = true;
+            for (const auto& k : p.kit)
+            {
+                const int ii = local.indexOf (p.id + "." + k.inst);
+                if (ii < 0) continue;
+                const auto& src = local.inst[(size_t) ii];
+                const auto& sz = src.zones[(size_t) std::min ((int) src.zones.size() - 1, k.variant + var)];
+                Zone z = sz; z.loKey = z.hiKey = k.key; z.root = k.key; z.rr = 0;
+                kit.zones.push_back (z);
+            }
+            kits.push_back (std::move (kit));
         }
-        local.inst.insert (local.inst.begin(), std::move (kit));
+        local.inst.insert (local.inst.begin(), std::make_move_iterator (kits.begin()), std::make_move_iterator (kits.end()));
     }
     lib.absorb (std::move (local));
 }

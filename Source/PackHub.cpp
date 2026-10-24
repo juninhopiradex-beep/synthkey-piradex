@@ -51,7 +51,7 @@ void PackHub::rescan()
     {
         PackEntry e; e.id = d.id; e.name = d.name; e.style = d.style; e.desc = d.desc; e.accent = d.accent; e.version = d.version; e.core = d.core;
         for (auto& s : d.insts) e.insts.push_back ({ d.id + "." + s.id, s.name, s.cat });
-        if (! d.kit.empty()) e.insts.insert (e.insts.begin(), { d.id + ".kit", "Kit de Bateria", "Bateria" });
+        if (! d.kit.empty()) { e.insts.insert (e.insts.begin(), { d.id + ".kit3", "Kit de Bateria C", "Bateria" }); e.insts.insert (e.insts.begin(), { d.id + ".kit2", "Kit de Bateria B", "Bateria" }); e.insts.insert (e.insts.begin(), { d.id + ".kit", "Kit de Bateria", "Bateria" }); }
         e.cover = coverFor (d.id);
         if (d.core)
         {

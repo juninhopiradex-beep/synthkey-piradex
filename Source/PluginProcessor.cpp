@@ -272,7 +272,7 @@ std::string SynthKeyProcessor::fallbackFor (const std::string& id)
 {
     const auto dot = id.find ('.'); const std::string s = dot == std::string::npos ? id : id.substr (dot + 1);
     auto has = [&] (const char* k) { return s.find (k) != std::string::npos; };
-    if (s == "kit") return "nucleo.kit";
+    if (s.rfind ("kit", 0) == 0) return "nucleo." + s;
     for (const char* d : { "kick", "snare", "clap", "hat", "ohat", "rim", "tom", "shaker", "riser", "impact" }) if (s == d) return std::string ("nucleo.") + d;
     if (has ("808") || has ("logdrum") || has ("logshort")) return "nucleo.808";
     if (has ("bass")) return "nucleo.sub";
