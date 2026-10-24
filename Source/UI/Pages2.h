@@ -3,6 +3,7 @@
 // =============================================================================
 #pragma once
 #include "Pages1.h"
+#include "StudioUI.h"
 
 namespace ui
 {
@@ -238,19 +239,15 @@ class PacksPage : public Page
 public:
     PacksPage (SynthKeyProcessor& p, Services& s) : Page (p), svc (s)
     {
-        int i = 0;
-        for (auto& e : PackHub::get().entries())
-        {
-            auto* c = new PackCard (p, s, e.id); cards.add (c); addAndMakeVisible (c);
-            const int col = i % 4, row = i / 4; c->setBounds (col * 291, row * 214, 283, 210); ++i;
-        }
+        addAndMakeVisible (vp); vp.setViewedComponent (&content, false); vp.setScrollBarsShown (true, false); vp.setScrollBarThickness (8); vp.setBounds (0, 0, 1156, 422);
+        populate();
         install.setButtonText (TX ("INSTALAR PACK (.bfpack)\xE2\x80\xA6")); folder.setButtonText (TX ("ABRIR PASTA DE PACKS"));
         addAndMakeVisible (install); addAndMakeVisible (folder);
         install.setBounds (0, 428, 230, 24); folder.setBounds (238, 428, 200, 24);
         install.onClick = [this] { chooseFile(); };
         folder.onClick = [] { skpaths::userPacks().revealToUser(); };
     }
-    void tick() override { ++ticks; if (ticks % 10 == 1) for (auto* c : cards) c->refresh(); }
+    void tick() override { ++ticks; if (ticks % 10 == 1) { if ((int) PackHub::get().entries().size() != cards.size()) populate(); for (auto* c : cards) c->refresh(); } }
     void paint (juce::Graphics& g) override
     {
         g.setColour (theme::dim()); g.setFont (theme::font (11.5f));
@@ -258,10 +255,20 @@ public:
     }
     void rebuildIfNeeded()
     {
-        if ((int) PackHub::get().entries().size() != cards.size()) { /* nº de packs é fixo */ }
+        if ((int) PackHub::get().entries().size() != cards.size()) populate();
         for (auto* c : cards) c->refresh (true);
     }
 private:
+    void populate()          // uma carta por pack (os packs criados no Estúdio juntam-se aos de fábrica); a grelha desloca-se se passar da altura
+    {
+        cards.clear(); int i = 0;
+        for (auto& e : PackHub::get().entries())
+        {
+            auto* c = new PackCard (proc, svc, e.id); cards.add (c); content.addAndMakeVisible (c);
+            const int col = i % 4, row = i / 4; c->setBounds (col * 291, row * 214, 283, 210); ++i;
+        }
+        content.setSize (1156, std::max (422, ((i + 3) / 4) * 214));
+    }
     void chooseFile()
     {
         chooser = std::make_shared<juce::FileChooser> (TX ("Escolha o ficheiro do pack (.bfpack)"), juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.bfpack");
@@ -274,7 +281,7 @@ private:
             self->rebuildIfNeeded();
         });
     }
-    Services& svc; juce::OwnedArray<PackCard> cards; juce::TextButton install, folder; std::shared_ptr<juce::FileChooser> chooser; int ticks = 0;
+    Services& svc; juce::Viewport vp; juce::Component content; juce::OwnedArray<PackCard> cards; juce::TextButton install, folder; std::shared_ptr<juce::FileChooser> chooser; int ticks = 0;
 };
 
 // ======================================================================================= ADMIN
@@ -283,13 +290,12 @@ class AdminPage : public Page, private juce::ListBoxModel
 public:
     AdminPage (SynthKeyProcessor& p, Services& s) : Page (p), svc (s)
     {
-        static const char* packIds[7] = { "trap", "rnb", "afrobeat", "amapiano", "drill", "kizomba", "kuduro" };
-        static const char* packNames[7] = { "Trap", "R&B", "Afrobeats", "Amapiano", "Drill", "Kizomba \xC2\xB7 Zouk", "Kuduro" };
-        for (int i = 0; i < 7; ++i)
-        {
-            auto* t = new juce::ToggleButton (TX (packNames[i])); packToggles.add (t); addAndMakeVisible (t); t->getProperties().set ("pack", packIds[i]);
-            t->setBounds (24 + (i / 4) * 240, 52 + (i % 4) * 24, 220, 24);
-        }
+        refreshPackToggles();
+        addAndMakeVisible (studioBtn); studioBtn.setButtonText (TX ("EST\xC3\x9A" "DIO DE CONTE\xC3\x9A" "DO \xE2\x96\xB8")); studioBtn.setBounds (944, 2, 200, 26);
+        studioBtn.setTooltip (TX ("Cria packs novos com os teus samples, loops, MIDI e presets"));
+        studio.reset (new StudioPanel (s.toast, s.prompt)); addChildComponent (*studio); studio->setBounds (0, 0, 1156, 452);
+        studio->onBack = [this] { studio->setVisible (false); };
+        studioBtn.onClick = [this] { studio->setVisible (true); studio->toFront (false); };
         for (auto* c : { (juce::Component*) &validity, (juce::Component*) &seats }) addAndMakeVisible (c);
         validity.addItem (TX ("Permanente"), 1); validity.addItem (TX ("At\xC3\xA9 uma data"), 2); validity.addItem (TX ("N dias ap\xC3\xB3s a ativa\xC3\xA7\xC3\xA3o"), 3); validity.setSelectedId (1);
         validity.onChange = [this] { updateFields(); };
@@ -331,9 +337,24 @@ public:
         g.setColour (theme::dim().withAlpha (0.6f)); g.setFont (theme::font (10.5f));
         g.drawText (TX ("As chaves ficam registadas em ") + skpaths::issuedFile().getFileName() + TX (" (neste computador, s\xC3\xB3 para o administrador)."), 544, 430, 600, 16, juce::Justification::centredLeft);
     }
-    void tick() override { ++ticks; if (ticks % 30 == 1) list.repaint(); }
+    void tick() override { ++ticks; if (ticks % 30 == 1) { list.repaint(); refreshPackToggles(); } if (studio && studio->isVisible()) studio->tick(); }
     void reload() { rows = AccessManager::get().issuedKeys(); std::reverse (rows.begin(), rows.end()); list.updateContent(); list.repaint(); }
 private:
+    // packs de fábrica + os criados no Estúdio (até 12 no total)
+    void refreshPackToggles()
+    {
+        std::vector<std::pair<std::string, juce::String>> want = { { "trap", "Trap" }, { "rnb", "R&B" }, { "afrobeat", "Afrobeats" }, { "amapiano", "Amapiano" }, { "drill", "Drill" }, { "kizomba", TX ("Kizomba \xC2\xB7 Zouk") }, { "kuduro", "Kuduro" } };
+        for (auto& e : PackHub::get().entries()) if (e.custom && want.size() < 12) want.emplace_back (e.id, TX (e.name.c_str()));
+        if ((int) want.size() == packToggles.size()) return;
+        std::set<std::string> on; for (auto* t : packToggles) if (t->getToggleState()) on.insert (t->getProperties()["pack"].toString().toStdString());
+        packToggles.clear();
+        for (size_t i = 0; i < want.size(); ++i)
+        {
+            auto* t = new juce::ToggleButton (want[i].second); packToggles.add (t); addAndMakeVisible (t); t->getProperties().set ("pack", juce::String (want[i].first));
+            t->setToggleState (on.count (want[i].first) > 0, juce::dontSendNotification); t->setBounds (24 + (int) (i / 4) * 164, 52 + (int) (i % 4) * 24, 160, 24);
+        }
+        if (studio) studio->toFront (false);
+    }
     void updateFields() { const int v = validity.getSelectedId(); dateEd.setVisible (v == 2); daysEd.setVisible (v == 3); }
     void generate()
     {
@@ -377,7 +398,7 @@ private:
         g.setFont (theme::font (11.0f, true)); g.setColour (sc); g.drawText (st, 356, 0, 130, h, juce::Justification::centredLeft);
         g.setFont (theme::font (11.5f)); g.setColour (theme::dim()); g.drawText (TX (k.note.c_str()), 484, 0, w - 490, h, juce::Justification::centredLeft);
     }
-    Services& svc; juce::OwnedArray<juce::ToggleButton> packToggles; juce::ComboBox validity, seats; juce::TextEditor dateEd, daysEd, qtyEd, noteEd, out;
+    Services& svc; std::unique_ptr<StudioPanel> studio; juce::TextButton studioBtn; juce::OwnedArray<juce::ToggleButton> packToggles; juce::ComboBox validity, seats; juce::TextEditor dateEd, daysEd, qtyEd, noteEd, out;
     juce::TextButton gen, copyOut, csvOut, copyKey, delKey, csvAll; juce::ToggleButton sim; juce::ListBox list;
     std::vector<sk::lic::IssuedKey> rows, lastBatch; int ticks = 0;
 };

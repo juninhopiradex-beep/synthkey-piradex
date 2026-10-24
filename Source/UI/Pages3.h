@@ -317,7 +317,9 @@ public:
     }
     void tick() override
     {
-        Page::tick(); const bool run = proc.groove.isRunning();
+        Page::tick();
+        if (PackHub::get().revision() != packRev) { packRev = PackHub::get().revision(); if (playing) proc.groove.stop(); sk::GrooveStore::get().setPackGrooves (PackHub::get().packGrooves()); rebuild(); }
+        const bool run = proc.groove.isRunning();
         if (run != playing) { playing = run; playBtn.setButtonText (playing ? TX ("\xE2\x96\xA0  PARAR") : TX ("\xE2\x96\xB6  TOCAR")); }
         roll.set (selected(), playing ? proc.groove.stepPosition() : -1.0);
     }
@@ -348,13 +350,15 @@ private:
     void onSelect() { if (const auto* g = selected()) bpmSlider.setValue (g->bpm, juce::dontSendNotification); updateButtons(); if (playing) restart(); repaint(); }
     int transposeSemis() const { const int k = keyBox.getSelectedId() - 1; return k <= 6 ? k : k - 12; }
     void togglePlay() { if (playing) { proc.groove.stop(); } else restart(); }
-    void restart() { if (const auto* g = selected()) { proc.prepareGrooveLayer (*g); refreshSoundBtn(); proc.groove.start (*g, transposeSemis(), bpmSlider.getValue()); } }
+    bool lockedPack (const sk::Groove* g) const { return g && ! g->pack.empty() && ! AccessManager::get().packStatus (g->pack, false).usable(); }
+    void restart() { if (const auto* g = selected()) { if (lockedPack (g)) { if (svc.toast) svc.toast (TX ("Groove de um pack bloqueado \xE2\x80\x94 ativa o pack com a tua chave."), true); proc.groove.stop(); return; } proc.prepareGrooveLayer (*g); refreshSoundBtn(); proc.groove.start (*g, transposeSemis(), bpmSlider.getValue()); } }
     sk::Groove* editing() { return const_cast<sk::Groove*> (selected()); }
     // devolve o groove editável: se for de fábrica cria primeiro uma cópia do utilizador e seleciona-a
     sk::Groove* makeEditable()
     {
         auto* sel = editing(); if (! sel) return nullptr; if (sel->user) return sel;
-        sk::Groove c = *sel; c.name += " (meu)"; c.user = true; c.file.clear(); c.bpm = (int) bpmSlider.getValue();
+        if (lockedPack (sel)) { if (svc.toast) svc.toast (TX ("Pack bloqueado \xE2\x80\x94 n\xC3\xA3o d\xC3\xA1 para editar."), true); return nullptr; }
+        sk::Groove c = *sel; c.name += " (meu)"; c.user = true; c.file.clear(); c.pack.clear(); c.bpm = (int) bpmSlider.getValue();
         auto* saved = sk::GrooveStore::get().save (c); if (! saved) return nullptr;
         selectGroove (saved); if (svc.toast) svc.toast (TX ("Criada uma c\xC3\xB3pia tua: ") + TX (saved->name.c_str()) + TX (" \xE2\x80\x94 os grooves de f\xC3\xA1" "brica n\xC3\xA3o s\xC3\xA3o alterados"), false);
         return saved;
@@ -454,7 +458,7 @@ private:
     }
     juce::File exportMidi()
     {
-        const auto* g = selected(); if (! g) return {};
+        const auto* g = selected(); if (! g || lockedPack (g)) return {};
         const int tr = transposeSemis(); const double bpm = bpmSlider.getValue(); const bool drums = g->kind == "Bateria";
         juce::MidiMessageSequence seq; constexpr int ppq = 480, tps = ppq / 4; const int ch = drums ? 10 : 1;
         seq.addEvent (juce::MidiMessage::tempoMetaEvent ((int) std::lround (60000000.0 / bpm)), 0.0);
@@ -482,8 +486,8 @@ private:
         g.setColour (juce::Colour (0x10FFFFFF)); g.drawHorizontalLine (h - 1, 0.0f, (float) w);
         const bool d = gr.kind == "Bateria"; g.setColour (d ? theme::accent2() : theme::accent()); g.setFont (theme::font (10.5f, true));
         g.drawText (TX (gr.kind.c_str()).toUpperCase(), 12, 0, 74, h, juce::Justification::centredLeft);
-        g.setColour (theme::text()); g.setFont (theme::font (13.5f, true)); g.drawText (TX (gr.name.c_str()), 90, 2, w - 190, 18, juce::Justification::centredLeft);
-        g.setColour (theme::dim()); g.setFont (theme::font (11.0f)); g.drawText (TX (gr.style.c_str()) + (gr.user ? TX ("   \xC2\xB7  MEU") : juce::String()), 90, 19, w - 190, 14, juce::Justification::centredLeft);
+        g.setColour (theme::text()); g.setFont (theme::font (13.5f, true)); g.drawText ((lockedPack (&gr) ? TX ("\xF0\x9F\x94\x92 ") : juce::String()) + TX (gr.name.c_str()), 90, 2, w - 190, 18, juce::Justification::centredLeft);
+        g.setColour (theme::dim()); g.setFont (theme::font (11.0f)); g.drawText (TX (gr.style.c_str()) + (gr.user ? TX ("   \xC2\xB7  MEU") : (gr.pack.empty() ? juce::String() : TX ("   \xC2\xB7  ") + TX (gr.pack.c_str()))), 90, 19, w - 190, 14, juce::Justification::centredLeft);
         g.drawText (juce::String (gr.bpm) + " bpm", w - 96, 0, 84, h, juce::Justification::centredRight);
     }
     void selectedRowsChanged (int row) override { if (row != selRow) { selRow = row; onSelect(); } }
@@ -491,6 +495,6 @@ private:
 
     Services& svc; juce::OwnedArray<juce::TextButton> styleBtns; std::vector<std::string> styleIds; int styleIdx = 0;
     juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn, soundBtn, newBtn, importBtn, renameBtn, deleteBtn; std::shared_ptr<juce::FileChooser> midiChooser; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
-    std::vector<const sk::Groove*> rows; int selRow = -1; bool playing = false;
+    std::vector<const sk::Groove*> rows; int selRow = -1; bool playing = false; int packRev = -1;
 };
 }

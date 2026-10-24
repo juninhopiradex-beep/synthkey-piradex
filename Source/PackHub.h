@@ -6,10 +6,12 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 #include <juce_graphics/juce_graphics.h>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <set>
+#include "Core/GrooveJson.h"
 #include "Core/PackIO.h"
 #include "Core/PresetBuilder.h"
 
@@ -19,7 +21,8 @@ struct PackEntry
     bool core = false, installed = false;
     juce::File file;
     std::vector<sk::packio::PackInfo::Inst> insts;      // lista de instrumentos (vem das definições, mesmo sem instalar)
-    int presetCount = 0;
+    int presetCount = 0, grooveCount = 0;
+    bool custom = false;                                 // pack criado no Estúdio (não vem das definições de fábrica)
     juce::Image cover;
 };
 
@@ -49,6 +52,8 @@ public:
 
     std::vector<sk::Preset> factoryPresets() const;         // Núcleo + packs instalados (já calibrados)
     std::vector<sk::Preset> userPresets() const;
+    std::vector<sk::Groove> packGrooves() const;            // grooves dos packs instalados (campo 'pack' preenchido)
+    int revision() const { return rev.load(); }             // muda sempre que a lista de packs é relida
     static juce::File userPresetFolder();
     static juce::Image coverFor (const std::string& packId);
     static std::string packOfInstrument (const std::string& instId) { const auto d = instId.find ('.'); return d == std::string::npos ? std::string() : instId.substr (0, d); }
@@ -60,6 +65,8 @@ private:
     mutable std::mutex mtx;
     std::vector<PackEntry> list;
     std::map<std::string, std::vector<sk::Preset>> presetsOf;
+    std::map<std::string, std::vector<sk::Groove>> groovesOf;
+    std::atomic<int> rev { 0 };
     std::map<std::string, std::shared_ptr<const sk::Library>> libs;
     std::set<std::string> loading, failed;
     std::shared_ptr<const sk::Library> userLib;

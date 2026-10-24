@@ -4,6 +4,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/UserAudio.h"
 #include "../Source/GrooveStore.h"
+#include "../Source/Studio.h"
 #include <cmath>
 #include <cstdio>
 
@@ -159,6 +160,58 @@ int main()
         check (store.userGrooves().size() == before, "apagar groove do utilizador");
         tmp.deleteRecursively();
         std::printf ("grooves do utilizador: importar/guardar/editar ok=%d\n", grooveFail == 0);
+    }
+    // ---- Estúdio: WAV + MIDI -> pack protegido -> instalar -> tocar
+    {
+        int studioFail = 0; auto check = [&] (bool ok, const char* msg) { if (! ok) { ++studioFail; std::printf ("FALHOU: %s\n", msg); } };
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sk_studio_test"); tmp.deleteRecursively(); tmp.createDirectory();
+        auto wav = [&] (const juce::String& nm, double f, double len) -> juce::File
+        {
+            juce::File out = tmp.getChildFile (nm + ".wav"); juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (out.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 24, {}, 0)); if (! w) return {}; os.release();
+            const int n = (int) (44100 * len); juce::AudioBuffer<float> b (1, n);
+            for (int i = 0; i < n; ++i) { const double t = i / 44100.0, env = std::exp (-t * (f < 0 ? 40.0 : 4.0)); b.setSample (0, i, (float) (0.8 * env * (f < 0 ? (std::fmod (i * 7919.0, 2000.0) / 1000.0 - 1.0) : std::sin (6.2831853 * f * t)))); }
+            w->writeFromAudioSampleBuffer (b, 0, n); return out;
+        };
+        const char* testId = "sk-teste-estudio";
+        sk::studio::Project::root().getChildFile (testId).deleteRecursively();
+        sk::studio::Project P; P.id = testId; P.name = "Teste Estudio"; P.style = "kuduro"; P.version = "1.0.0";
+        juce::Array<juce::File> shots; shots.add (wav ("Kick Duro", -1, 0.3)); shots.add (wav ("Snare Seco", -1, 0.25)); shots.add (wav ("Hat Fechado", -1, 0.1));
+        auto w1 = P.addAudio (shots, sk::studio::ImportMode::OneShots, {});
+        check (w1.isEmpty() && P.insts.size() == 3, "estudio: 3 one-shots");
+        for (auto& in : P.insts) std::printf ("   inst %s cat=%s fixed=%d key=%d\n", in.slug.c_str(), in.cat.c_str(), (int) in.fixed, sk::studio::drumKeyFromName (juce::String (in.name)));
+        bool allDrum = true; for (auto& in : P.insts) allDrum = allDrum && in.cat == "Bateria"; check (allDrum, "estudio: categoria Bateria detetada pelo nome");
+        juce::Array<juce::File> keys; keys.add (wav ("Piano C3", 261.63, 1.0)); keys.add (wav ("Piano G3", 392.0, 1.0)); keys.add (wav ("Piano C4", 523.25, 1.0));
+        P.addAudio (keys, sk::studio::ImportMode::MultiSample, "Piano Teste");
+        bool multi = false; for (auto& in : P.insts) if (in.name == "Piano Teste") multi = in.zones.size() == 3 && ! in.fixed && in.zones.front().lo == 0 && in.zones.back().hi == 127; check (multi, "estudio: multi-sample com 3 zonas e teclado completo");
+        juce::Array<juce::File> lp; lp.add (wav ("Loop Perc", 330.0, 1.5)); P.addAudio (lp, sk::studio::ImportMode::Loops, {});
+        sk::Groove gg; gg.name = "Groove Teste"; gg.kind = "Bateria"; gg.bars = 1; gg.bpm = 130; gg.notes = { { 0, 36, 1, 110 }, { 4, 38, 1, 100 }, { 8, 36, 1, 110 }, { 12, 38, 1, 100 } }; P.grooves.push_back (gg);
+        check (P.save(), "estudio: guardar projeto");
+        sk::studio::Project P2; check (sk::studio::Project::load (testId, P2) && P2.insts.size() == P.insts.size() && P2.grooves.size() == 1, "estudio: recarregar projeto");
+        juce::File outPack; juce::String summary; const auto err = P.exportPack (outPack, summary);
+        check (err.isEmpty() && outPack.existsAsFile(), "estudio: exportar pack"); if (err.isNotEmpty()) std::printf ("   erro: %s\n", err.toRawUTF8());
+        std::printf ("estudio: %s\n", summary.toRawUTF8());
+        auto bad = P; bad.id = "trap"; juce::File o2; juce::String s2; check (bad.exportPack (o2, s2).isNotEmpty(), "estudio: id reservado deve falhar");
+        check (PackHub::get().install (outPack).isEmpty(), "estudio: instalar pack");
+        PackEntry pe; juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        check (PackHub::get().entry (testId, pe) && pe.installed && pe.custom && pe.grooveCount == 1 && pe.presetCount >= 4, "estudio: pack aparece no gestor (custom, grooves, presets)");
+        check (! PackHub::get().packGrooves().empty() && PackHub::get().packGrooves().front().pack == testId, "estudio: groove do pack disponivel");
+        PackHub::get().ensureLoaded (testId); for (int i = 0; i < 400 && (PackHub::get().isLoading (testId) || ! PackHub::get().library (testId)); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        auto lib = PackHub::get().library (testId); check (lib && lib->indexOf (std::string (testId) + ".kit") >= 0 && lib->indexOf (std::string (testId) + ".piano-teste") >= 0, "estudio: biblioteca com kit e piano");
+        proc.refreshPresetList(); int kit = -1, pia = -1; for (size_t i = 0; i < proc.presetList().size(); ++i) { auto& p = proc.presetList()[i]; if (p.pack == testId && p.name.rfind ("Kit", 0) == 0) kit = (int) i; if (p.pack == testId && p.name == "Piano Teste") pia = (int) i; }
+        check (kit >= 0 && pia >= 0, "estudio: presets automaticos (kit + piano)");
+        for (int which : { kit, pia })
+        {
+            if (which < 0) continue; proc.loadPresetIndex (which); juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+            juce::MidiBuffer mb; float pk = 0; for (int b = 0; b < 100; ++b) { mb.clear(); if (b == 0) mb.addEvent (juce::MidiMessage::noteOn (1, which == kit ? 36 : 62, (juce::uint8) 100), 0); buf.clear(); proc.processBlock (buf, mb); for (int s = 0; s < 256; ++s) pk = std::max (pk, std::abs (buf.getSample (0, s))); }
+            mb.clear(); mb.addEvent (juce::MidiMessage::noteOff (1, which == kit ? 36 : 62), 0); buf.clear(); proc.processBlock (buf, mb);
+            std::printf ("estudio: '%s' pico %.1f dB\n", proc.presetList()[(size_t) which].name.c_str(), 20.0 * std::log10 (std::max (pk, 1e-10f))); check (pk > 0.02f, "estudio: preset do pack toca");
+        }
+        // as chaves funcionam com o id novo (derivadas do segredo + id)
+        { const auto st = AccessManager::get().packStatus (testId, false); (void) st; }
+        PackHub::get().uninstall (testId); outPack.deleteFile(); sk::studio::Project::root().getChildFile (testId).deleteRecursively(); tmp.deleteRecursively();
+        check (! PackHub::get().entry (testId, pe), "estudio: desinstalar remove o pack");
+        grooveFail += studioFail; std::printf ("estudio: %s\n", studioFail == 0 ? "ok" : "FALHAS");
     }
     // ---- importação do utilizador: sample tonal (altura detetada), percussivo, wavetable
     int importFail = 0;

@@ -33,7 +33,7 @@ juce::File PackHub::userPresetFolder() { return skpaths::userPresets(); }
 
 void PackHub::rescan()
 {
-    std::vector<PackEntry> next; std::map<std::string, std::vector<Preset>> pres;
+    std::vector<PackEntry> next; std::map<std::string, std::vector<Preset>> pres; std::map<std::string, std::vector<Groove>> grv;
     // ficheiros instalados
     std::map<std::string, std::pair<juce::File, packio::PackInfo>> found;
     for (auto dir : { skpaths::sharedPacks(), skpaths::userPacks() })
@@ -65,11 +65,30 @@ void PackHub::rescan()
             zip::Reader zr; std::vector<Preset> pl;
             if (zr.openFile (e.file.getFullPathName().toStdString())) packio::readPresets (zr, pl);
             e.presetCount = (int) pl.size(); pres[d.id] = std::move (pl);
+            std::vector<Groove> gl; if (zr.openFile (e.file.getFullPathName().toStdString())) packio::readGrooves (zr, gl);
+            for (auto& g : gl) g.pack = d.id;
+            e.grooveCount = (int) gl.size(); grv[d.id] = std::move (gl);
         }
         next.push_back (std::move (e));
     }
-    { std::lock_guard<std::mutex> g (mtx); list = std::move (next); presetsOf = std::move (pres); }
-    sendChangeMessage();
+    // packs criados no Estúdio (id que não existe nas definições de fábrica)
+    for (auto& kv : found)
+    {
+        bool known = false; for (auto& d : defs) if (d.id == kv.first) known = true; if (known) continue;
+        const auto& info = kv.second.second; PackEntry e; e.id = info.id; e.name = info.name; e.style = info.style; e.desc = info.desc; e.accent = info.accent; e.version = info.version;
+        e.custom = true; e.installed = true; e.file = kv.second.first; for (auto& i : info.insts) e.insts.push_back (i);
+        zip::Reader zr; std::vector<Preset> pl; std::vector<Groove> gl; std::string jpg;
+        if (zr.openFile (e.file.getFullPathName().toStdString()))
+        {
+            packio::readPresets (zr, pl); packio::readGrooves (zr, gl);
+            if (packio::readCover (zr, jpg)) e.cover = juce::ImageFileFormat::loadFrom (jpg.data(), jpg.size());
+        }
+        for (auto& g : gl) g.pack = info.id;
+        e.presetCount = (int) pl.size(); e.grooveCount = (int) gl.size(); pres[info.id] = std::move (pl); grv[info.id] = std::move (gl);
+        next.push_back (std::move (e));
+    }
+    { std::lock_guard<std::mutex> g (mtx); list = std::move (next); presetsOf = std::move (pres); groovesOf = std::move (grv); }
+    ++rev; sendChangeMessage();
 }
 
 std::vector<PackEntry> PackHub::entries() const { std::lock_guard<std::mutex> g (mtx); return list; }
@@ -79,6 +98,13 @@ std::vector<Preset> PackHub::factoryPresets() const
 {
     std::lock_guard<std::mutex> g (mtx); std::vector<Preset> all;
     for (auto& e : list) { auto it = presetsOf.find (e.id); if (it != presetsOf.end()) all.insert (all.end(), it->second.begin(), it->second.end()); }
+    return all;
+}
+
+std::vector<Groove> PackHub::packGrooves() const
+{
+    std::lock_guard<std::mutex> g (mtx); std::vector<Groove> all;
+    for (auto& e : list) { auto it = groovesOf.find (e.id); if (it != groovesOf.end()) all.insert (all.end(), it->second.begin(), it->second.end()); }
     return all;
 }
 
@@ -106,7 +132,7 @@ void PackHub::loadJob (std::string id)
     auto lib = std::make_shared<Library>(); bool ok = false;
     const PackDef* def = nullptr; for (auto& d : defs) if (d.id == id) def = &d;
     if (def && def->core) { buildPackLibrary (*def, *lib); ok = true; }
-    else if (def)
+    else
     {
         PackEntry e; if (entry (id, e) && e.installed)
         {

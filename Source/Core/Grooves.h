@@ -23,7 +23,8 @@ struct Groove
 {
     std::string style, kind, name;
     int bpm = 120, bars = 2; float swing = 0.0f;
-    bool user = false; std::string file;      // grooves do utilizador (editados / importados de MIDI) vivem numa pasta própria
+    bool user = false; std::string file;
+    std::string pack;                         // grooves que vêm de um pack: id do pack (bloqueado se o pack estiver bloqueado)      // grooves do utilizador (editados / importados de MIDI) vivem numa pasta própria
     std::vector<GNote> notes;                 // já com a altura absoluta (Dó), prontas a transpor
     int totalSteps() const { return bars * 16; }
 };

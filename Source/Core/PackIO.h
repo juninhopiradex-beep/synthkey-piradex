@@ -9,6 +9,7 @@
 //    LICENSE.txt
 // =============================================================================
 #pragma once
+#include "GrooveJson.h"
 #include "Licensing.h"
 #include "PackSpecs.h"
 #include "Preset.h"
@@ -37,7 +38,8 @@ inline std::string manifestMac (const std::string& secret, const std::string& id
 struct PresetFile { std::string name, json; };
 
 // constrói um pack a partir da definição, da biblioteca (já gerada por buildPackLibrary) e dos presets
-inline std::string buildPack (const PackDef& def, const Library& lib, const std::vector<Preset>& presets, const std::string& coverJpg, const std::string& secret)
+inline std::string buildPack (const PackDef& def, const Library& lib, const std::vector<Preset>& presets, const std::string& coverJpg, const std::string& secret,
+                              const std::vector<Groove>& grooves = {})
 {
     zip::Writer zw;
     json::Value man = json::Value::makeObject();
@@ -86,9 +88,13 @@ inline std::string buildPack (const PackDef& def, const Library& lib, const std:
     json::Value pf = json::Value::makeArray();
     for (const auto& p : presets) { std::string leaf = p.name; for (auto& ch : leaf) if (! std::isalnum ((unsigned char) ch)) ch = '_'; pf.arr.push_back (json::Value::makeString ("presets/" + leaf + ".skpreset")); }
     man.set ("presets", pf);
+    json::Value gf = json::Value::makeArray();
+    for (const auto& g : grooves) { std::string leaf = g.name; for (auto& ch : leaf) if (! std::isalnum ((unsigned char) ch)) ch = '_'; gf.arr.push_back (json::Value::makeString ("grooves/" + leaf + ".skgroove")); }
+    man.set ("grooves", gf);
     man.set ("mac", json::Value::makeString (manifestMac (secret, def.id, def.version, fileHashes)));
     zw.add ("manifest.json", json::stringify (man, true));
     for (size_t i = 0; i < presets.size(); ++i) zw.add (pf.arr[i].str, presetToJson (presets[i]));
+    for (size_t i = 0; i < grooves.size(); ++i) zw.add (gf.arr[i].str, groovejson::toJson (grooves[i]));
     if (! coverJpg.empty()) zw.add ("cover.jpg", coverJpg);
     zw.add ("LICENSE.txt", "SYNTHKEY by Piradex — pack \"" + def.name + "\" " + def.version + "\nLicenca de utilizador unico para producao musical. Proibida a redistribuicao dos samples isolados.\n(c) Piradex / BeatFreak Studio.\n");
     return zw.finish();
@@ -124,6 +130,14 @@ inline bool readPresets (const zip::Reader& zr, std::vector<Preset>& out)
         {
             Preset p; if (presetFromJson (zr.read (it), p)) out.push_back (std::move (p));
         }
+    return true;
+}
+
+// grooves incluídos no pack (JSON em claro)
+inline bool readGrooves (const zip::Reader& zr, std::vector<Groove>& out)
+{
+    for (auto& it : zr.list())
+        if (it.name.rfind ("grooves/", 0) == 0) { Groove g; if (groovejson::fromJson (zr.read (it), g)) out.push_back (std::move (g)); }
     return true;
 }
 
