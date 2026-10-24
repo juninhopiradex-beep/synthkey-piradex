@@ -66,6 +66,28 @@ int main()
             std::printf ("pre-visualizacao: primeiros 8 s = %.1f dB, depois dos 17 s = %.1f dB, expirada=%d\n", 20.0 * std::log10 (std::max (early, 1e-10f)), 20.0 * std::log10 (std::max (late, 1e-10f)), (int) proc.previewExpired.load());
         }
     }
+    // ---- grooves internos + buffer do osciloscópio
+    int grooveFail = 0;
+    {
+        proc.loadPresetIndex (0); juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+        const sk::Groove* bass = nullptr; for (auto& g : sk::allGrooves()) if (g.kind == "Baixo") { bass = &g; break; }
+        proc.groove.start (*bass, 0, 0); float pk = 0; juce::MidiBuffer mb; const int w0 = proc.scopeWrite.load(); float scopeMax = 0;
+        for (int b = 0; b < 400; ++b) { mb.clear(); buf.clear(); proc.processBlock (buf, mb); for (int s = 0; s < 256; ++s) pk = std::max (pk, std::abs (buf.getSample (0, s))); }
+        for (int i = 0; i < 8192; ++i) scopeMax = std::max (scopeMax, std::abs (proc.scopeBuf[i]));
+        proc.groove.stop(); mb.clear(); buf.clear(); proc.processBlock (buf, mb);
+        std::printf ("groove baixo: pico %.1f dB, scope max %.3f, scopeWrite %d -> %d\n", 20.0 * std::log10 (std::max (pk, 1e-10f)), scopeMax, w0, proc.scopeWrite.load());
+        if (pk < 0.01f || scopeMax < 0.01f || proc.scopeWrite.load() == w0) { ++grooveFail; std::printf ("FALHOU: groove/osciloscopio sem sinal\n"); }
+        // bateria com um kit
+        int kit = -1; for (int i = 0; i < n; ++i) if (proc.presetList()[(size_t) i].name.rfind ("Kit", 0) == 0 && ! proc.presetIsLocked (proc.presetList()[(size_t) i])) { kit = i; break; }
+        const sk::Groove* dr = nullptr; for (auto& g : sk::allGrooves()) if (g.kind == "Bateria") { dr = &g; break; }
+        if (kit >= 0 && dr)
+        {
+            proc.loadPresetIndex (kit); juce::MessageManager::getInstance()->runDispatchLoopUntil (60); proc.groove.start (*dr, 0, 0); pk = 0;
+            for (int b = 0; b < 400; ++b) { mb.clear(); buf.clear(); proc.processBlock (buf, mb); for (int s = 0; s < 256; ++s) pk = std::max (pk, std::abs (buf.getSample (0, s))); }
+            proc.groove.stop(); std::printf ("groove bateria com '%s': pico %.1f dB\n", proc.presetList()[(size_t) kit].name.c_str(), 20.0 * std::log10 (std::max (pk, 1e-10f)));
+            if (pk < 0.01f) { ++grooveFail; std::printf ("FALHOU: groove de bateria mudo\n"); }
+        }
+    }
     proc.releaseResources();
-    return bad == 0 ? 0 : 1;
+    return (bad == 0 && grooveFail == 0) ? 0 : 1;
 }

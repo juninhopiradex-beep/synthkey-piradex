@@ -8,6 +8,7 @@
 #include "Look.h"
 #include "../PluginProcessor.h"
 #include "../AppPaths.h"
+#include "ModRing.h"
 
 namespace ui
 {
@@ -30,7 +31,7 @@ class Knob : public juce::Slider
 {
 public:
     Knob (SynthKeyProcessor& p, int paramIdx, const juce::String& label, bool bipolarArc = false, bool fxNormalized = false)
-        : info (sk::kParams[paramIdx]), caption (label), bipolar (bipolarArc), fx (fxNormalized)
+        : info (sk::kParams[paramIdx]), caption (label), bipolar (bipolarArc), fx (fxNormalized), procRef (&p), pidx (paramIdx)
     {
         setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag); setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         setRotaryParameters (juce::MathConstants<float>::pi * 1.2f, juce::MathConstants<float>::pi * 2.8f, true);
@@ -58,6 +59,18 @@ public:
         juce::Path val; const float zero = bipolar ? a0 + 0.5f * (a1 - a0) : a0;
         val.addCentredArc (cx, cy, rad - 2.0f, rad - 2.0f, 0.0f, std::min (zero, ang), std::max (zero, ang), true);
         if (std::abs (ang - zero) > 0.01f) theme::glowStroke (g, val, isEnabled() ? c : c.withAlpha (0.3f), 3.0f);
+        // anel de modulação (o que a matriz faz a este parâmetro)
+        { float lo = 0, hi = 0;
+          if (modRangeFor (*procRef, pidx, lo, hi))
+          {
+              const float pl = juce::jlimit (0.0f, 1.0f, prop + lo), ph = juce::jlimit (0.0f, 1.0f, prop + hi);
+              if (ph - pl > 0.004f)
+              {
+                  juce::Path mr; mr.addCentredArc (cx, cy, rad + 0.5f, rad + 0.5f, 0.0f, a0 + pl * (a1 - a0), a0 + ph * (a1 - a0), true);
+                  g.setColour (theme::accent2().withAlpha (0.28f)); g.strokePath (mr, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                  g.setColour (theme::accent2()); g.strokePath (mr, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+              }
+          } }
         // ponteiro
         juce::Path ptr; ptr.addRoundedRectangle (-1.2f, -rad * 0.62f, 2.4f, rad * 0.34f, 1.0f);
         g.setColour (juce::Colours::white); g.fillPath (ptr, juce::AffineTransform::rotation (ang).translated (cx, cy));
@@ -67,7 +80,7 @@ public:
         g.drawFittedText (showVal ? getTextFromValue (getValue()) : caption, 0, (int) b.getHeight() - 17, (int) b.getWidth(), 15, juce::Justification::centred, 1, 0.8f);
     }
 private:
-    sk::ParamInfo info; bool bipolar, fx;
+    sk::ParamInfo info; bool bipolar, fx; SynthKeyProcessor* procRef; int pidx;
     std::unique_ptr<juce::SliderParameterAttachment> attach;
 };
 

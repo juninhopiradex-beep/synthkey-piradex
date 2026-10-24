@@ -11,7 +11,7 @@ struct KitKey { int key; const char* inst; int variant; };
 
 struct PackDef
 {
-    std::string id, name, style, desc, version = "1.0.0";
+    std::string id, name, style, desc, version = "1.1.0";
     bool core = false;                    // Núcleo: incluído, nunca bloqueado
     std::vector<synth::InstSpec> insts;
     std::vector<KitKey> kit;

@@ -53,7 +53,7 @@ void PackHub::rescan()
         e.cover = coverFor (d.id);
         if (d.core)
         {
-            e.installed = true; auto pl = presets::nucleo();
+            e.installed = true; auto pl = presets::forPack ("nucleo");
             for (auto& p : pl) for (auto& g : presets::kNucleoGains) if (p.name == g.first) p.set (P_MASTER_VOL, g.second);
             e.presetCount = (int) pl.size(); pres[d.id] = std::move (pl);
         }

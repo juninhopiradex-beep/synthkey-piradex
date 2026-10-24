@@ -43,7 +43,7 @@ int main()
                 const double pdb = 20.0 * std::log10 (std::max (peak, 1e-6f)); if (std::fabs (pdb + 8.0) > 1.5) std::printf ("   fora do alvo: %s %.1f dB (master %.1f)\n", p.name.c_str(), pdb, mv); }
         }
     }
-    CHECK (total >= 100, "pelo menos 100 presets");
+    CHECK (total >= 230, "pelo menos 230 presets");
     for (auto& e : presets::lintErrors()) { ++fails; std::printf ("LINT: %s\n", e.c_str()); }
     std::printf ("%zu presets, master médio %.1f dB\n", total, sumDb / std::max (1, nCal));
     std::printf ("%d verificações, %d falhas\n", checks, fails);

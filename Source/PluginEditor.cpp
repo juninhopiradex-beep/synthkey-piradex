@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 #include "UI/Pages2.h"
+#include "UI/Pages3.h"
+#include "UI/Visual.h"
 #include "BinaryData.h"
 
 using namespace ui;
@@ -135,16 +137,16 @@ public:
         for (auto* b : { &prevBtn, &nextBtn, &menuBtn, &presetBtn }) addAndMakeVisible (b);
         prevBtn.setButtonText (TX ("\xE2\x97\x80")); nextBtn.setButtonText (TX ("\xE2\x96\xB6")); menuBtn.setButtonText (TX ("\xE2\x8B\xAF"));
         prevBtn.onClick = [this] { proc.stepPreset (-1); }; nextBtn.onClick = [this] { proc.stepPreset (1); };
-        presetBtn.onClick = [this] { showPresetMenu(); }; menuBtn.onClick = [this] { showToolsMenu(); };
+        presetBtn.onClick = [this] { if (browser.isOpen()) browser.close(); else browser.open(); }; menuBtn.onClick = [this] { showToolsMenu(); };
         static const char* modeNames[3] = { "F\xC3\x81" "CIL", "AVAN\xC3\x87" "ADO", "EXPERT" };
         for (int i = 0; i < 3; ++i) { auto* b = new ModeBtn (TX (modeNames[i])); modeBtns.add (b); addAndMakeVisible (b); b->onClick = [this, i] { setMode (i + 1); }; }
         for (int i = 0; i < 5; ++i) { auto* d = new PaletteDot (i, [this] (int k) { setPalette (k); }); dots.add (d); addAndMakeVisible (d); }
         addAndMakeVisible (logout); logout.setButtonText (TX ("SAIR")); logout.onClick = [this] { AccessManager::get().logout(); };
         // ---- separadores
-        static const char* tabNames[6] = { "SOM", "MATRIZ", "EFEITOS", "ARP", "PACKS", "ADMIN" };
-        for (int i = 0; i < 6; ++i) { auto* t = new TabBtn (TX (tabNames[i])); tabs.add (t); addAndMakeVisible (t); t->onClick = [this, i] { showTab (i); }; }
+        static const char* tabNames[kNumTabs] = { "SOM", "MATRIZ", "EFEITOS", "ARP", "VISUAL", "GROOVES", "PACKS", "ADMIN" };
+        for (int i = 0; i < kNumTabs; ++i) { auto* t = new TabBtn (TX (tabNames[i])); tabs.add (t); addAndMakeVisible (t); t->onClick = [this, i] { showTab (i); }; }
         // ---- páginas
-        pages.add (new SomPage (proc)); pages.add (new MatrixPage (proc)); pages.add (new FxPage (proc)); pages.add (new ArpPage (proc)); pages.add (new PacksPage (proc, svc));
+        pages.add (new SomPage (proc)); pages.add (new MatrixPage (proc)); pages.add (new FxPage (proc)); pages.add (new ArpPage (proc)); pages.add (new VisualPage (proc)); pages.add (new GroovesPage (proc, svc)); pages.add (new PacksPage (proc, svc));
         for (auto* pg : pages) { addAndMakeVisible (pg); pg->setBounds (12, 108, 1156, 452); }
         // ---- macros + master
         static const char* macroNames[8] = { "BRILHO", "CORPO", "MOVIM.", "ESPAÇO", "LARGURA", "SUJIDADE", "BALANÇO", "DOBRA" };
@@ -160,6 +162,7 @@ public:
         keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, theme::accent().withAlpha (0.55f)); keyboard.setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, theme::accent().withAlpha (0.25f));
         keyboard.setScrollButtonsVisible (false); keyboard.setMidiChannel (1); keyboard.setWantsKeyboardFocus (true);
         // ---- sobreposições
+        addChildComponent (browser); browser.setBounds (0, 0, 1180, 760);
         addChildComponent (toast); toast.setBounds (340, 540, 500, 44);
         addChildComponent (prompt); prompt.setBounds (0, 0, 1180, 760);
         addChildComponent (login); login.setBounds (0, 0, 1180, 760); login.onUnlocked = [this] { syncAccess(); };
@@ -167,12 +170,13 @@ public:
         backdrop.setBounds (0, 0, 1180, 760); decor.setBounds (0, 0, 1180, 760);
         proc.onPresetLoaded = [this] { presetBtn.setButtonText (proc.currentPresetName()); presetBtn.repaint(); };
         presetBtn.setButtonText (proc.currentPresetName());
-        setMode (mode); showTab (juce::jlimit (0, 4, proc.getUiInt ("uiTab", 0)));
+        setMode (mode); showTab (juce::jlimit (0, kTabAdmin - 1, proc.getUiInt ("uiTab", 0)));
         syncAccess(); startTimerHz (30);
     }
     ~MainView() override { proc.onPresetLoaded = nullptr; stopTimer(); }
 
     Services svc;
+    static constexpr int kNumTabs = 8, kTabAdmin = 7;
     void paintDecor (juce::Graphics& g)
     {
         // logótipo
@@ -210,7 +214,7 @@ private:
     void timerCallback() override
     {
         syncAccess();
-        if (auto* pg = pages[currentTab]) pg->tick();
+        if (currentTab < pages.size()) { if (auto* pg = pages[currentTab]) pg->tick(); }
         if (toast.expired()) toast.setVisible (false);
         meter.set (proc.meterL.load(), proc.meterR.load());
         const int vc = proc.voiceCount.load(); const int pv = (proc.previewMode.load() ? 1 : 0) + (proc.previewExpired.load() ? 2 : 0) + ((int) proc.previewSecondsLeft.load() << 4);
@@ -227,17 +231,17 @@ private:
     }
     void layoutTabs()
     {
-        int x = 16; for (int i = 0; i < 6; ++i) { const bool vis = i < 5 || adminShown; tabs[i]->setVisible (vis); if (vis) { tabs[i]->setBounds (x, 64, 106, 34); x += 108; } }
+        int x = 16; for (int i = 0; i < kNumTabs; ++i) { const bool vis = i < kTabAdmin || adminShown; tabs[i]->setVisible (vis); if (vis) { tabs[i]->setBounds (x, 64, 100, 34); x += 102; } }
         logout.setBounds (1070, 68, 90, 24); logout.setVisible (AccessManager::get().isUnlocked());
     }
     void showTab (int i)
     {
-        if (i == 5 && ! adminPage) i = 0;
-        currentTab = i; proc.setUiInt ("uiTab", std::min (i, 4));
-        for (int k = 0; k < 6; ++k) tabs[k]->setToggleState (k == i, juce::dontSendNotification);
+        if (i == kTabAdmin && ! adminPage) i = 0;
+        currentTab = i; proc.setUiInt ("uiTab", std::min (i, kTabAdmin - 1));
+        for (int k = 0; k < kNumTabs; ++k) tabs[k]->setToggleState (k == i, juce::dontSendNotification);
         for (int k = 0; k < pages.size(); ++k) pages[k]->setVisible (k == i);
-        if (adminPage) adminPage->setVisible (i == 5);
-        if (auto* pg = i == 5 ? static_cast<Page*> (adminPage.get()) : pages[i]) pg->tick();
+        if (adminPage) adminPage->setVisible (i == kTabAdmin);
+        if (auto* pg = i == kTabAdmin ? static_cast<Page*> (adminPage.get()) : pages[i]) pg->tick();
         repaint();
     }
     void setMode (int m)
@@ -284,6 +288,7 @@ private:
     juce::OwnedArray<ModeBtn> modeBtns; juce::OwnedArray<PaletteDot> dots; juce::OwnedArray<TabBtn> tabs; juce::OwnedArray<Page> pages; std::unique_ptr<AdminPage> adminPage;
     juce::OwnedArray<Knob> macros; std::unique_ptr<Knob> master; Meter meter; juce::MidiKeyboardComponent keyboard;
     Toast toast; PromptOverlay prompt; LoginOverlay login; std::vector<int> presetIds;
+    PresetBrowser browser { proc, [this] (const juce::String& t, bool e) { toast.show (t, e); } };
 public:
     void layoutHeader()
     {

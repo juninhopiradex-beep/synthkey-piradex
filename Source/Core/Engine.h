@@ -234,7 +234,7 @@ private:
         v.zone[E] = z; v.sd[E] = lib->data[(size_t) z->data].get(); v.instr[E] = &I;
         const int len = v.sd[E]->frames();
         const float st = clampf (pe[P_A_START], 0.0f, 0.98f);
-        for (int u = 0; u < kMaxUni; ++u) v.sp[E][u] = pe[P_A_REV] > 0.5f ? (double) (len - 1) * (1.0 - st) : (double) len * st;
+        for (int u = 0; u < kMaxUni; ++u) v.sp[E][u] = pe[P_A_REV] > 0.5f ? (double) (len - 3) * (1.0 - st) : (double) len * st;
     }
 
     void runChain (int firstSlot, float* L, float* R, int n)

@@ -9,6 +9,7 @@
 #pragma once
 #include "Preset.h"
 #include <cstdlib>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -323,10 +324,19 @@ inline std::vector<Preset> kuduro()
     return ROWS (R, "kuduro");
 }
 
+#include "PresetsMore.inc"
+
 inline std::vector<Preset> forPack (const std::string& id)
 {
-    if (id == "nucleo") return nucleo(); if (id == "trap") return trap(); if (id == "rnb") return rnb(); if (id == "afrobeat") return afrobeat();
-    if (id == "amapiano") return amapiano(); if (id == "drill") return drill(); if (id == "kizomba") return kizomba(); if (id == "kuduro") return kuduro();
+    auto cat = [] (std::vector<Preset> a, std::vector<Preset> b) { a.insert (a.end(), std::make_move_iterator (b.begin()), std::make_move_iterator (b.end())); return a; };
+    if (id == "nucleo") return cat (nucleo(), nucleoMore());
+    if (id == "trap") return cat (trap(), trapMore());
+    if (id == "rnb") return cat (rnb(), rnbMore());
+    if (id == "afrobeat") return cat (afrobeat(), afrobeatMore());
+    if (id == "amapiano") return cat (amapiano(), amapianoMore());
+    if (id == "drill") return cat (drill(), drillMore());
+    if (id == "kizomba") return cat (kizomba(), kizombaMore());
+    if (id == "kuduro") return cat (kuduro(), kuduroMore());
     return {};
 }
 }} // namespace sk::presets

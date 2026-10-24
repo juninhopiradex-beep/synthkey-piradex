@@ -15,5 +15,5 @@ o nº de computadores, a quantidade e uma nota (nome do cliente). **GERAR CHAVES
 **Simular cliente** ignora o acesso MASTER/BETA aos packs para testar uma chave como um cliente.
 
 ## Dar um pack a um cliente
-Envie o ficheiro `SYNTHKEY_Pack_<estilo>_1.0.0.bfpack` + a chave. O cliente arrasta o `.bfpack` para a janela
+Envie o ficheiro `SYNTHKEY_Pack_<estilo>_1.1.0.bfpack` + a chave. O cliente arrasta o `.bfpack` para a janela
 do plugin (ou usa PACKS → INSTALAR), depois clica no cartão do estilo → **Inserir chave**.

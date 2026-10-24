@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSAO: "1.0.0"
+  VERSAO: "1.1.0"
 
 jobs:
   testes-e-packs:
@@ -28,6 +28,8 @@ jobs:
           ./test_core
           ./test_packio
           ./test_presets
+          g++ -O2 -std=c++17 -ISource tests/test_grooves.cpp -o test_grooves
+          ./test_grooves
 
       - name: Injetar segredos (não vão para o repositório)
         run: |

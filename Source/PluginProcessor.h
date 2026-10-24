@@ -2,6 +2,7 @@
 //  SYNTHKEY by Piradex — processador de áudio
 // =============================================================================
 #pragma once
+#include "Core/Grooves.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
@@ -68,10 +69,16 @@ public:
 
     // ---- medidores / estado para a interface ----
     std::atomic<float> meterL { 0 }, meterR { 0 };
+    // buffer circular (mono) para o osciloscópio e o espectro; escrito na thread de áudio, lido pela interface
+    static constexpr int kScopeSize = 8192;
+    float scopeBuf[kScopeSize] = {};
+    std::atomic<int> scopeWrite { 0 };
+    double sampleRateNow() const { return sr; }
     std::atomic<int> voiceCount { 0 };
     std::atomic<bool> previewMode { false }, previewExpired { false };
     std::atomic<float> previewSecondsLeft { 0 };
     juce::MidiKeyboardState keyboardState;
+    sk::GroovePlayer groove;                              // reprodutor de grooves (injeta notas no MIDI de entrada)
     std::function<void()> onPresetLoaded;                // chamado na thread de mensagens
 
     // propriedades de interface guardadas no estado do plugin
@@ -92,6 +99,7 @@ private:
     std::unique_ptr<sk::Engine> engine;
     sk::MidiFx midiFx;
     std::vector<sk::NoteEvent> evs;
+    std::vector<sk::GMidiEvent> grooveEvs;
     double sr = 44100.0; int engineMax = 512;
     float modWheel = 0, sustainPedal = 0;
 

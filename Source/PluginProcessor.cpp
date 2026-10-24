@@ -81,6 +81,7 @@ juce::AudioProcessorEditor* SynthKeyProcessor::createEditor() { return new Synth
 
 void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    grooveEvs.reserve (1024); groove.stop();
     sr = sampleRate; engineMax = std::max (512, samplesPerBlock);
     engine->prepare (sampleRate, engineMax); midiFx.prepare ((float) sampleRate);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
@@ -114,6 +115,11 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             playing = pos->getIsPlaying();
         }
     engine->setBpm (bpm);
+
+    // ---- grooves internos: as notas entram no mesmo caminho do MIDI externo (escala / acordes / arpejador)
+    grooveEvs.clear(); groove.process (n, sr, grooveEvs);
+    for (const auto& ge : grooveEvs)
+        midi.addEvent (ge.on ? juce::MidiMessage::noteOn (1, ge.note, (juce::uint8) ge.vel) : juce::MidiMessage::noteOff (1, ge.note), ge.offset);
 
     // ---- MIDI de entrada -> MidiFx (escala / acordes / arpejador)
     float pitchBend = 0, aftertouch = 0; bool gotPb = false, gotAt = false;
@@ -170,6 +176,11 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
     else { previewGain = 1.0f; previewExpired.store (false); }
 
+    {   // alimenta o osciloscópio / espectro
+        int w = scopeWrite.load (std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i) { scopeBuf[w] = 0.5f * (L[i] + R[i]); w = (w + 1) & (kScopeSize - 1); }
+        scopeWrite.store (w, std::memory_order_release);
+    }
     meterL.store (engine->getPeakL()); meterR.store (engine->getPeakR()); voiceCount.store (engine->activeVoices());
 }
 

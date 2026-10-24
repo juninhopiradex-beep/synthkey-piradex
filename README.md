@@ -15,9 +15,9 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.0.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.0.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
-   * `SYNTHKEY_Pack_<estilo>_1.0.0.bfpack` (um por estilo)
+   * `SYNTHKEY-by-Piradex-1.1.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.1.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY_Pack_<estilo>_1.1.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
 arquiteturas/versão mínima do macOS, valida o AU (`auval`) e o VST3 (`pluginval`) e cria os instaladores.
@@ -57,3 +57,12 @@ g++ -O2 -std=c++17 -ISource tests/test_core.cpp -o test_core && ./test_core
 O segredo das chaves está dentro do binário (necessário para validar offline): protege contra uso casual e
 partilha de chaves, **não** contra engenharia inversa dedicada. O nº de computadores por chave não é imposto offline;
 a ativação online está prevista para a v1.1.
+
+## Novidades da v1.1.0
+
+* **240 presets** de fábrica (Núcleo 83 + 21–23 por estilo).
+* Separador **VISUAL**: osciloscópio, espectro, curva dos filtros e wavetable em 3D.
+* **Anéis de modulação** nos botões: mostram o que a matriz faz a cada parâmetro.
+* **Navegador de presets** (clique no nome do preset): pesquisa por nome/estilo/etiqueta, filtros por pack e categoria, favoritos (★).
+* Separador **GROOVES**: 56 grooves, linhas de baixo, progressões de acordes e melodias por estilo (Trap, R&B, Afrobeat, Amapiano, Drill, Kizomba, Kuduro), com reprodução interna, escolha do tom e do BPM, **arrastar MIDI para o DAW** e botão **MODO ESTILO**.
+* Correção: o modo "Reverso" dos samples agora toca.

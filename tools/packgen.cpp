@@ -47,7 +47,7 @@ int main (int argc, char** argv)
 
     if (mode == "gains")
     {
-        auto list = presets::nucleo();
+        auto list = presets::forPack ("nucleo");
         std::string out = "// GERADO por tools/packgen (modo gains) — ganhos calibrados dos presets do Núcleo\n#pragma once\n#include <utility>\nnamespace sk { namespace presets\n{\ninline const std::pair<const char*, float> kNucleoGains[] =\n{\n";
         for (auto& p : list) { presets::calibrate (p, nuc); char b[200]; std::snprintf (b, sizeof b, "    { \"%s\", %.2ff },\n", p.name.c_str(), p.get (P_MASTER_VOL)); out += b; }
         out += "};\n}} // namespace sk::presets\n";

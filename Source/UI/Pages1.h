@@ -23,6 +23,8 @@ public:
     {
         int sig = 17; for (auto* s : sections) sig = sig * 31 + s->visibilitySignature();
         if (sig != lastSig) { lastSig = sig; for (auto* s : sections) s->relayout(); }
+        const int ms = modMatrixSignature (proc);       // os anéis de modulação dos botões seguem a matriz
+        if (ms != lastModSig) { lastModSig = ms; repaintKnobs (*this); }
     }
 protected:
     int val (int idx) const { return (int) proc.getReal (idx); }
@@ -39,7 +41,11 @@ protected:
     {
         auto* t = s->add (new Toggle (proc, idx, label), w, 28, level, std::move (sh)); s->setYOffset (t, yoff); return t;
     }
-    SynthKeyProcessor& proc; juce::OwnedArray<Section> sections; int mode = 2; int lastSig = 0;
+    static void repaintKnobs (juce::Component& c)
+    {
+        for (auto* ch : c.getChildren()) { if (dynamic_cast<Knob*> (ch)) ch->repaint(); else repaintKnobs (*ch); }
+    }
+    SynthKeyProcessor& proc; juce::OwnedArray<Section> sections; int mode = 2; int lastSig = 0; int lastModSig = 0;
 };
 
 // ----------------------------------------------------------------- seletor de instrumento (sample)
