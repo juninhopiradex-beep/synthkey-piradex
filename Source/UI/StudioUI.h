@@ -153,7 +153,7 @@ private:
     {
         if (mode == sk::studio::ImportMode::MultiSample && prompt)
         {
-            prompt (TX ("Multi-sample"), TX ("Nome do instrumento (as notas s\xC3\xA3o detetadas em cada ficheiro e o teclado \xC3\xA9 distribu\xC3\xADdo entre eles)."), TX ("Piano"), TX ("Criar"),
+            prompt (TX ("Multi-sample"), TX ("Nome do instrumento (as notas s\xC3\xA3o detetadas em cada ficheiro e o teclado \xC3\xA9 distribu\xC3\xAD" "do entre eles)."), TX ("Piano"), TX ("Criar"),
                 [this, files] (const juce::String& nm) -> juce::String { if (nm.trim().isEmpty()) return TX ("Escolhe um nome."); doAddAudio (files, sk::studio::ImportMode::MultiSample, nm.trim()); return {}; });
             return;
         }
