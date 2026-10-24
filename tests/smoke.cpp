@@ -3,6 +3,7 @@
 //   SK_TEST_PW=<senha master ou beta> ./synthkey_smoke
 #include "../Source/PluginProcessor.h"
 #include "../Source/UserAudio.h"
+#include "../Source/GrooveStore.h"
 #include <cmath>
 #include <cstdio>
 
@@ -109,6 +110,55 @@ int main()
             if (proc.grooveLayerOn()) { ++grooveFail; std::printf ("FALHOU: camada devia estar desligada\n"); }
             proc.setGrooveSoundKey ("auto");
         }
+    }
+    // ---- grooves do utilizador: importar MIDI, guardar, recarregar, editar ao vivo
+    {
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sk_midi_test"); tmp.createDirectory();
+        auto writeMid = [&] (const juce::String& nm, int ch, std::vector<std::vector<int>> notes /* {tick, note, len, vel} */, int bpm)
+        {
+            juce::MidiMessageSequence seq; seq.addEvent (juce::MidiMessage::tempoMetaEvent (60000000 / bpm), 0.0);
+            for (auto& n : notes) { seq.addEvent (juce::MidiMessage::noteOn (ch, n[1], (juce::uint8) n[3]), n[0]); seq.addEvent (juce::MidiMessage::noteOff (ch, n[1]), n[0] + n[2]); }
+            seq.updateMatchedPairs(); juce::MidiFile mf; mf.setTicksPerQuarterNote (480); mf.addTrack (seq);
+            auto f = tmp.getChildFile (nm + ".mid"); f.deleteFile(); juce::FileOutputStream os (f); mf.writeTo (os); return f;
+        };
+        auto check = [&] (bool ok, const char* msg) { if (! ok) { ++grooveFail; std::printf ("FALHOU: %s\n", msg); } };
+        sk::Groove g; juce::String err;
+        // bateria GM no canal 10: bombo, caixa, hat de oitavo em oitavo, 2 compassos; nota 40 (caixa eléctrica) e 49 (prato) são mapeadas
+        std::vector<std::vector<int>> dr; for (int s = 0; s < 32; s += 8) dr.push_back ({ s * 120, 36, 60, 110 }); for (int s = 4; s < 32; s += 8) dr.push_back ({ s * 120, 40, 60, 100 });
+        for (int s = 0; s < 32; s += 2) dr.push_back ({ s * 120, 42, 60, 80 }); dr.push_back ({ 0, 49, 60, 90 });
+        check (sk::GrooveStore::importMidi (writeMid ("sk_dr", 10, dr, 96), "kuduro", g, err), "importar bateria");
+        check (g.kind == "Bateria" && g.bars == 2 && g.bpm == 96 && g.style == "kuduro", "bateria: tipo/compassos/bpm/estilo");
+        bool lanesOk = true; for (auto& n : g.notes) if (n.note != 36 && n.note != 38 && n.note != 42 && n.note != 46) lanesOk = false; check (lanesOk, "bateria: pistas mapeadas");
+        // baixo: notas graves, uma de cada vez
+        std::vector<std::vector<int>> bs; for (int s = 0; s < 16; s += 4) bs.push_back ({ s * 120, 36 + (s % 8), 360, 100 });
+        check (sk::GrooveStore::importMidi (writeMid ("sk_bs", 1, bs, 100), "", g, err) && g.kind == "Baixo" && g.bars == 1, "importar baixo");
+        // acordes: tríades
+        std::vector<std::vector<int>> ch; for (int s = 0; s < 32; s += 8) for (int k : { 60, 64, 67 }) ch.push_back ({ s * 120, k, 840, 90 });
+        check (sk::GrooveStore::importMidi (writeMid ("sk_ch", 1, ch, 90), "", g, err) && g.kind == "Acordes" && g.bars == 2, "importar acordes");
+        // melodia: notas agudas
+        std::vector<std::vector<int>> me; for (int s = 0; s < 16; s += 2) me.push_back ({ s * 120, 72 + (s % 5), 120, 90 });
+        check (sk::GrooveStore::importMidi (writeMid ("sk_me", 1, me, 110), "", g, err) && g.kind == "Melodia", "importar melodia");
+        check (! sk::GrooveStore::importMidi (tmp.getChildFile ("nao_existe.mid"), "", g, err), "ficheiro inexistente deve falhar");
+        // guardar / recarregar / apagar
+        auto& store = sk::GrooveStore::get(); const size_t before = store.userGrooves().size();
+        g.name = "sk_teste_groove"; auto* saved = store.save (g);
+        check (saved && store.userGrooves().size() == before + 1, "guardar groove do utilizador");
+        store.reload(); bool found = false; for (auto& u : store.userGrooves()) if (u.name == "sk_teste_groove") { found = u.notes.size() == g.notes.size() && u.kind == g.kind && u.user; }
+        check (found, "recarregar groove do utilizador (notas iguais)");
+        // edição ao vivo: o player continua a tocar e aceita o novo conteúdo
+        const sk::Groove* live = nullptr; for (auto& u : store.userGrooves()) if (u.name == "sk_teste_groove") live = &u;
+        if (live)
+        {
+            sk::Groove edit = *live; proc.groove.start (edit, 0, 0); juce::MidiBuffer mb; for (int b = 0; b < 40; ++b) { mb.clear(); buf.clear(); proc.processBlock (buf, mb); }
+            const double p0 = proc.groove.stepPosition(); edit.notes.push_back ({ 8, 80, 2, 100 }); proc.groove.update (edit, 0);
+            for (int b = 0; b < 4; ++b) { mb.clear(); buf.clear(); proc.processBlock (buf, mb); }
+            check (proc.groove.isRunning() && proc.groove.stepPosition() >= p0, "edicao ao vivo mantem a posicao"); proc.groove.stop(); mb.clear(); buf.clear(); proc.processBlock (buf, mb);
+        }
+        for (auto& u : std::vector<sk::Groove> (store.userGrooves().begin(), store.userGrooves().end()))
+            if (u.name == "sk_teste_groove") { for (auto it = store.userGrooves().begin(); it != store.userGrooves().end(); ++it) if (it->name == u.name) { store.remove (&*it); break; } }
+        check (store.userGrooves().size() == before, "apagar groove do utilizador");
+        tmp.deleteRecursively();
+        std::printf ("grooves do utilizador: importar/guardar/editar ok=%d\n", grooveFail == 0);
     }
     // ---- importação do utilizador: sample tonal (altura detetada), percussivo, wavetable
     int importFail = 0;

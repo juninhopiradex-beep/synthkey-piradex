@@ -23,6 +23,7 @@ struct Groove
 {
     std::string style, kind, name;
     int bpm = 120, bars = 2; float swing = 0.0f;
+    bool user = false; std::string file;      // grooves do utilizador (editados / importados de MIDI) vivem numa pasta própria
     std::vector<GNote> notes;                 // já com a altura absoluta (Dó), prontas a transpor
     int totalSteps() const { return bars * 16; }
 };
@@ -100,17 +101,17 @@ class GroovePlayer
 public:
     void start (const Groove& g, int transpose, double bpmOverride)
     {
-        Lock l (flag); std::vector<Ev> e;
-        const int total = g.totalSteps();
-        for (auto& n : g.notes)
-        {
-            const int note = juce_clamp (n.note + (g.kind == "Bateria" ? 0 : transpose), 0, 127);
-            const double sw = (n.step % 2 == 1) ? g.swing : 0.0;
-            e.push_back ({ n.step + sw, note, n.vel, true });
-            e.push_back ({ std::min ((double) total - 0.01, (double) (n.step + n.len) - 0.02 + sw), note, 0, false });
-        }
-        std::stable_sort (e.begin(), e.end(), [] (const Ev& a, const Ev& b) { return a.t < b.t; });
-        evs = std::move (e); loopSteps = total; bpm = bpmOverride > 0 ? bpmOverride : g.bpm; pos = 0; cursor = 0; wantStart = true; running.store (true);
+        Lock l (flag); build (g, transpose);
+        bpm = bpmOverride > 0 ? bpmOverride : g.bpm; pos = 0; cursor = 0; wantStart = true; running.store (true);
+    }
+    // altera o groove a tocar sem voltar ao início (edição ao vivo)
+    void update (const Groove& g, int transpose)
+    {
+        Lock l (flag); if (! running.load()) return;
+        build (g, transpose);
+        if (pos >= (double) loopSteps) pos = 0.0;
+        cursor = 0; while (cursor < evs.size() && evs[cursor].t < pos) ++cursor;
+        wantStart = true;                                   // largou as notas que ficaram presas
     }
     void stop() { Lock l (flag); wantStop = true; running.store (false); }
     bool isRunning() const { return running.load(); }
@@ -147,6 +148,19 @@ public:
     }
 private:
     struct Ev { double t; int note; int vel; bool on; };
+    void build (const Groove& g, int transpose)
+    {
+        std::vector<Ev> e; const int total = g.totalSteps();
+        for (auto& n : g.notes)
+        {
+            const int note = juce_clamp (n.note + (g.kind == "Bateria" ? 0 : transpose), 0, 127);
+            const double sw = (n.step % 2 == 1) ? g.swing : 0.0;
+            e.push_back ({ n.step + sw, note, n.vel, true });
+            e.push_back ({ std::min ((double) total - 0.01, (double) (n.step + n.len) - 0.02 + sw), note, 0, false });
+        }
+        std::stable_sort (e.begin(), e.end(), [] (const Ev& a, const Ev& b) { return a.t < b.t; });
+        evs = std::move (e); loopSteps = total;
+    }
     struct Lock { std::atomic_flag& f; explicit Lock (std::atomic_flag& x) : f (x) { while (f.test_and_set (std::memory_order_acquire)) {} } ~Lock() { f.clear (std::memory_order_release); } };
     static int juce_clamp (int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
     std::atomic_flag flag = ATOMIC_FLAG_INIT;

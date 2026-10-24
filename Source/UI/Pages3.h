@@ -5,6 +5,7 @@
 #include <set>
 #include "Pages2.h"
 #include "../Core/Grooves.h"
+#include "../GrooveStore.h"
 
 namespace ui
 {
@@ -152,30 +153,98 @@ private:
     juce::Rectangle<int> panel { 12, 104, 500, 552 }; std::vector<int> rows; std::vector<std::string> packIds; bool suppress = false;
 };
 
-// ------------------------------------------------------------------------------- vista do piano-roll de um groove
+// ------------------------------------------------------------------------------- piano-roll de um groove (editável)
+//  clicar numa célula vazia cria uma nota (arrastar para a direita alonga); clicar numa nota apaga; arrastar uma nota para cima/baixo muda a velocidade.
 class GrooveRoll : public juce::Component
 {
 public:
+    std::function<sk::Groove* ()> beginEdit;        // devolve o groove editável (cria uma cópia do utilizador se for de fábrica)
+    std::function<void()> edited, committed;        // a cada alteração / ao largar o rato
+
     void set (const sk::Groove* gr, double playhead) { if (gr != g || std::abs (playhead - head) > 1e-6) { g = gr; head = playhead; repaint(); } }
     void paint (juce::Graphics& gg) override
     {
         auto r = getLocalBounds().toFloat(); gg.setColour (juce::Colour (0xFF0A0C18)); gg.fillRoundedRectangle (r, 6.0f);
-        if (! g || g->notes.empty()) return;
-        r = r.reduced (6.0f); const int steps = g->totalSteps(); const bool drums = g->kind == "Bateria";
-        std::vector<int> lanes; for (auto& n : g->notes) if (std::find (lanes.begin(), lanes.end(), n.note) == lanes.end()) lanes.push_back (n.note);
-        std::sort (lanes.begin(), lanes.end()); int lo = lanes.front(), hi = lanes.back();
-        const int nl = drums ? (int) lanes.size() : std::max (8, hi - lo + 1); const float lh = r.getHeight() / (float) nl, sw = r.getWidth() / (float) steps;
-        for (int s = 0; s <= steps; ++s) { gg.setColour (s % 16 == 0 ? juce::Colour (0x40FFFFFF) : (s % 4 == 0 ? juce::Colour (0x22FFFFFF) : juce::Colour (0x0DFFFFFF))); gg.drawVerticalLine ((int) (r.getX() + s * sw), r.getY(), r.getBottom()); }
+        if (! g) return;
+        const bool drums = g->kind == "Bateria"; Lay L = layout (drums, g->notes);
+        const int steps = g->totalSteps(); const float lh = L.area.getHeight() / (float) L.n, sw = L.area.getWidth() / (float) steps;
+        for (int i = 0; i < L.n; ++i)                                   // linhas e etiquetas
+        {
+            const float y = L.area.getBottom() - (i + 1) * lh; const int note = drums ? kDrums[i].note : L.lo + i;
+            const bool black = ! drums && juce::MidiMessage::isMidiNoteBlack (note);
+            if (black) { gg.setColour (juce::Colour (0x12000000)); gg.fillRect (L.area.getX(), y, L.area.getWidth(), lh); }
+            gg.setColour (juce::Colour (0x0DFFFFFF)); gg.drawHorizontalLine ((int) y, L.area.getX(), L.area.getRight());
+            if (drums || lh >= 13.0f || note % 12 == 0)
+            {
+                gg.setColour (theme::dim()); gg.setFont (theme::font (drums ? 9.5f : 9.0f, true));
+                gg.drawText (drums ? juce::String (kDrums[i].name) : juce::MidiMessage::getMidiNoteName (note, true, true, 3), 2, (int) y, (int) L.area.getX() - 6, (int) std::max (lh, 10.0f), juce::Justification::centredRight);
+            }
+        }
+        for (int s = 0; s <= steps; ++s) { gg.setColour (s % 16 == 0 ? juce::Colour (0x40FFFFFF) : (s % 4 == 0 ? juce::Colour (0x22FFFFFF) : juce::Colour (0x0DFFFFFF))); gg.drawVerticalLine ((int) (L.area.getX() + s * sw), L.area.getY(), L.area.getBottom()); }
         for (auto& n : g->notes)
         {
-            int li = drums ? (int) (std::find (lanes.begin(), lanes.end(), n.note) - lanes.begin()) : (n.note - lo); const float y = r.getBottom() - (li + 1) * lh;
-            auto b = juce::Rectangle<float> (r.getX() + n.step * sw + 1.0f, y + 1.0f, std::max (3.0f, n.len * sw - 2.0f), std::max (3.0f, lh - 2.0f));
+            const int li = laneOf (L, drums, n.note); if (li < 0) continue; const float y = L.area.getBottom() - (li + 1) * lh;
+            auto b = juce::Rectangle<float> (L.area.getX() + n.step * sw + 1.0f, y + 1.0f, std::max (3.0f, n.len * sw - 2.0f), std::max (3.0f, lh - 2.0f));
             gg.setColour ((drums ? theme::accent2() : theme::accent()).withAlpha (0.35f + 0.65f * (float) n.vel / 127.0f)); gg.fillRoundedRectangle (b, 2.0f);
         }
-        if (head >= 0) { const float x = r.getX() + (float) head * sw; gg.setColour (juce::Colours::white.withAlpha (0.85f)); gg.drawVerticalLine ((int) x, r.getY(), r.getBottom()); }
+        if (head >= 0) { const float x = L.area.getX() + (float) head * sw; gg.setColour (juce::Colours::white.withAlpha (0.85f)); gg.drawVerticalLine ((int) x, L.area.getY(), L.area.getBottom()); }
+        if (g->notes.empty()) { gg.setColour (theme::dim()); gg.setFont (theme::font (13.0f)); gg.drawText (TX ("Clica na grelha para criar notas"), L.area.toNearestInt(), juce::Justification::centred); }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! g || ! beginEdit) return;
+        auto* eg = beginEdit(); if (! eg) return; g = ge = eg;
+        const bool drums = g->kind == "Bateria"; frozen = layout (drums, g->notes); Lay& L = frozen;
+        const float lh = L.area.getHeight() / (float) L.n, sw = L.area.getWidth() / (float) g->totalSteps();
+        const int step = (int) std::floor ((e.position.x - L.area.getX()) / sw), lane = (int) std::floor ((L.area.getBottom() - e.position.y) / lh);
+        mode = None; hit = -1; if (step < 0 || step >= g->totalSteps() || lane < 0 || lane >= L.n) return;
+        const int note = drums ? kDrums[lane].note : L.lo + lane;
+        for (size_t i = 0; i < g->notes.size(); ++i) { auto& n = g->notes[i]; if (n.note == note && step >= n.step && step < n.step + n.len) { hit = (int) i; break; } }
+        if (hit >= 0) { mode = Existing; startVel = g->notes[(size_t) hit].vel; startY = e.position.y; moved = false; return; }
+        sk::GNote n; n.step = step; n.note = note; n.len = drums ? 1 : lastLen; n.vel = 100; ge->notes.push_back (n); hit = (int) ge->notes.size() - 1; anchor = step; mode = Creating;
+        if (edited) edited(); repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! ge || hit < 0 || hit >= (int) ge->notes.size()) return; auto& n = ge->notes[(size_t) hit]; const Lay& L = frozen;
+        const float sw = L.area.getWidth() / (float) g->totalSteps();
+        if (mode == Creating && g->kind != "Bateria")
+        {
+            const int step = (int) std::floor ((e.position.x - L.area.getX()) / sw); const int len = juce::jlimit (1, g->totalSteps() - n.step, step - anchor + 1);
+            if (len != n.len) { n.len = len; lastLen = len; if (edited) edited(); repaint(); }
+        }
+        else if (mode == Existing && std::abs (e.position.y - startY) > 3.0f)
+        {
+            moved = true; const int v = juce::jlimit (1, 127, startVel + (int) std::lround ((startY - e.position.y) * 1.2f));
+            if (v != n.vel) { n.vel = v; if (edited) edited(); repaint(); }
+        }
+    }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (! ge || hit < 0) { mode = None; return; }
+        if (mode == Existing && ! moved && hit < (int) ge->notes.size()) { ge->notes.erase (ge->notes.begin() + hit); if (edited) edited(); }
+        hit = -1; mode = None; if (committed) committed(); repaint();
     }
 private:
-    const sk::Groove* g = nullptr; double head = -1;
+    struct Drum { int note; const char* name; };
+    static constexpr Drum kDrums[11] = { { 36, "BOMBO" }, { 37, "RIM" }, { 38, "CAIXA" }, { 39, "PALMAS" }, { 41, "TOM" }, { 42, "HAT" }, { 43, "CONGA-" }, { 44, "SHAKER" }, { 45, "CONGA+" }, { 46, "HAT ABR." }, { 47, "BONGO" } };
+    struct Lay { juce::Rectangle<float> area; int n = 1, lo = 48; };
+    Lay layout (bool drums, const std::vector<sk::GNote>& notes) const
+    {
+        Lay L; L.area = getLocalBounds().toFloat().reduced (6.0f); L.area.removeFromLeft (46.0f);
+        if (drums) { L.n = 11; return L; }
+        int lo = 127, hi = 0; for (auto& n : notes) { lo = std::min (lo, n.note); hi = std::max (hi, n.note); }
+        if (notes.empty()) { lo = 55; hi = 67; }
+        lo = std::max (0, lo - 1); hi = std::min (127, hi + 1); while (hi - lo + 1 < 12) { if (lo > 0) --lo; if (hi - lo + 1 < 12 && hi < 127) ++hi; }
+        L.lo = lo; L.n = hi - lo + 1; return L;
+    }
+    int laneOf (const Lay& L, bool drums, int note) const
+    {
+        if (drums) { for (int i = 0; i < 11; ++i) if (kDrums[i].note == note) return i; return -1; }
+        return note >= L.lo && note < L.lo + L.n ? note - L.lo : -1;
+    }
+    const sk::Groove* g = nullptr; sk::Groove* ge = nullptr; double head = -1;
+    enum Mode { None, Creating, Existing } mode = None; Lay frozen; int hit = -1, anchor = 0, startVel = 100, lastLen = 2; float startY = 0; bool moved = false;
 };
 
 class MidiDragHandle : public juce::Component
@@ -203,24 +272,33 @@ private:
 };
 
 // ================================================================================== página GROOVES
-class GroovesPage : public Page, private juce::ListBoxModel
+class GroovesPage : public Page, private juce::ListBoxModel, public juce::FileDragAndDropTarget
 {
 public:
     GroovesPage (SynthKeyProcessor& p, Services& s) : Page (p), svc (s)
     {
-        static const char* styles[8] = { "todos", "trap", "rnb", "afrobeat", "amapiano", "drill", "kizomba", "kuduro" };
-        static const char* labels[8] = { "TODOS", "TRAP", "R&B", "AFROBEATS", "AMAPIANO", "DRILL", "KIZOMBA", "KUDURO" };
-        for (int i = 0; i < 8; ++i)
+        static const char* styles[9] = { "todos", "trap", "rnb", "afrobeat", "amapiano", "drill", "kizomba", "kuduro", "meus" };
+        static const char* labels[9] = { "TODOS", "TRAP", "R&B", "AFROBEATS", "AMAPIANO", "DRILL", "KIZOMBA", "KUDURO", "MEUS" };
+        for (int i = 0; i < 9; ++i)
         {
             styleIds.push_back (styles[i]); auto* b = styleBtns.add (new juce::TextButton (labels[i])); addAndMakeVisible (b);
-            b->setClickingTogglesState (false); b->onClick = [this, i] { setStyleFilter (i); }; b->setBounds (i * 104, 0, 100, 32);
+            b->setClickingTogglesState (false); b->onClick = [this, i] { setStyleFilter (i); }; b->setBounds (i * 93, 0, 89, 32);
         }
         addAndMakeVisible (kindBox); kindBox.addItem ("Todos os tipos", 1); kindBox.addItem ("Bateria", 2); kindBox.addItem ("Baixo", 3); kindBox.addItem ("Acordes", 4); kindBox.addItem ("Melodia", 5);
-        kindBox.setSelectedId (1, juce::dontSendNotification); kindBox.onChange = [this] { rebuild(); }; kindBox.setBounds (840, 2, 140, 28);
+        kindBox.setSelectedId (1, juce::dontSendNotification); kindBox.onChange = [this] { rebuild(); }; kindBox.setBounds (846, 2, 140, 28);
         addAndMakeVisible (styleModeBtn); styleModeBtn.setButtonText ("MODO ESTILO"); styleModeBtn.setBounds (996, 0, 160, 32); styleModeBtn.onClick = [this] { applyStyleMode(); };
         styleModeBtn.setTooltip (TX ("Escolhe o estilo: muda o padr\xC3\xA3o do arpejador, filtra os grooves e carrega um preset do estilo"));
         addAndMakeVisible (list); list.setModel (this); list.setRowHeight (36); list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF0A0C18)); list.setOutlineThickness (0); list.setBounds (0, 42, 470, 410);
         addAndMakeVisible (roll); roll.setBounds (494, 92, 648, 236);
+        roll.beginEdit = [this] { return makeEditable(); };
+        roll.edited = [this] { if (auto* g = editing()) { if (playing) proc.groove.update (*g, transposeSemis()); } };
+        roll.committed = [this] { saveCurrent(); };
+        for (auto* b : { &newBtn, &importBtn, &renameBtn, &deleteBtn }) addAndMakeVisible (b);
+        newBtn.setButtonText ("NOVO"); importBtn.setButtonText ("IMPORTAR MIDI"); renameBtn.setButtonText ("NOME"); deleteBtn.setButtonText ("APAGAR");
+        newBtn.setBounds (802, 48, 64, 26); importBtn.setBounds (872, 48, 126, 26); renameBtn.setBounds (1004, 48, 62, 26); deleteBtn.setBounds (1072, 48, 70, 26);
+        newBtn.onClick = [this] { newGroove(); }; importBtn.onClick = [this] { chooseMidi(); }; renameBtn.onClick = [this] { renameCurrent(); }; deleteBtn.onClick = [this] { deleteCurrent(); };
+        newBtn.setTooltip (TX ("Criar um groove vazio e desenhar as notas")); importBtn.setTooltip (TX ("Importar um ficheiro .mid (tamb\xC3\xA9m podes arrast\xC3\xA1-lo para aqui)"));
+        renameBtn.setTooltip (TX ("Mudar o nome do groove (s\xC3\xB3 os teus)")); deleteBtn.setTooltip (TX ("Apagar o groove (s\xC3\xB3 os teus)"));
         addAndMakeVisible (playBtn); playBtn.setButtonText (TX ("\xE2\x96\xB6  TOCAR")); playBtn.setBounds (494, 348, 120, 40); playBtn.onClick = [this] { togglePlay(); };
         addAndMakeVisible (keyBox); const char* keys[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         for (int i = 0; i < 12; ++i) keyBox.addItem (juce::String ("Tom: ") + keys[i], i + 1); keyBox.setSelectedId (1, juce::dontSendNotification); keyBox.setBounds (626, 354, 110, 28);
@@ -260,13 +338,85 @@ private:
     void rebuild()
     {
         rows.clear(); const int k = kindBox.getSelectedId(); static const char* kinds[5] = { "", "Bateria", "Baixo", "Acordes", "Melodia" };
-        for (auto& g : sk::allGrooves()) { if (styleIdx > 0 && g.style != styleIds[(size_t) styleIdx]) continue; if (k > 1 && g.kind != kinds[k - 1]) continue; rows.push_back (&g); }
+        for (auto* g : sk::GrooveStore::get().all())
+        {
+            if (styleIdx > 0 && (styleIds[(size_t) styleIdx] == "meus" ? ! g->user : g->style != styleIds[(size_t) styleIdx])) continue;
+            if (k > 1 && g->kind != kinds[k - 1]) continue; rows.push_back (g);
+        }
         selRow = rows.empty() ? -1 : 0; list.updateContent(); list.selectRow (selRow); list.repaint(); onSelect(); repaint();
     }
-    void onSelect() { if (const auto* g = selected()) bpmSlider.setValue (g->bpm, juce::dontSendNotification); if (playing) restart(); repaint(); }
+    void onSelect() { if (const auto* g = selected()) bpmSlider.setValue (g->bpm, juce::dontSendNotification); updateButtons(); if (playing) restart(); repaint(); }
     int transposeSemis() const { const int k = keyBox.getSelectedId() - 1; return k <= 6 ? k : k - 12; }
     void togglePlay() { if (playing) { proc.groove.stop(); } else restart(); }
     void restart() { if (const auto* g = selected()) { proc.prepareGrooveLayer (*g); refreshSoundBtn(); proc.groove.start (*g, transposeSemis(), bpmSlider.getValue()); } }
+    sk::Groove* editing() { return const_cast<sk::Groove*> (selected()); }
+    // devolve o groove editável: se for de fábrica cria primeiro uma cópia do utilizador e seleciona-a
+    sk::Groove* makeEditable()
+    {
+        auto* sel = editing(); if (! sel) return nullptr; if (sel->user) return sel;
+        sk::Groove c = *sel; c.name += " (meu)"; c.user = true; c.file.clear(); c.bpm = (int) bpmSlider.getValue();
+        auto* saved = sk::GrooveStore::get().save (c); if (! saved) return nullptr;
+        selectGroove (saved); if (svc.toast) svc.toast (TX ("Criada uma c\xC3\xB3pia tua: ") + TX (saved->name.c_str()) + TX (" \xE2\x80\x94 os grooves de f\xC3\xA1" "brica n\xC3\xA3o s\xC3\xA3o alterados"), false);
+        return saved;
+    }
+    void selectGroove (const sk::Groove* g)
+    {
+        if (styleIdx > 0 && ! (styleIds[(size_t) styleIdx] == "meus" ? g->user : g->style == styleIds[(size_t) styleIdx])) setStyleFilter (0);
+        rebuild(); for (size_t i = 0; i < rows.size(); ++i) if (rows[i] == g) { selRow = (int) i; list.selectRow ((int) i); list.scrollToEnsureRowIsOnscreen ((int) i); break; }
+        updateButtons(); repaint();
+    }
+    void saveCurrent() { if (auto* g = editing()) if (g->user) { g->bpm = (int) bpmSlider.getValue(); sk::GrooveStore::get().save (*g); list.repaint(); repaint(); } }
+    void updateButtons() { const auto* g = selected(); const bool u = g && g->user; renameBtn.setEnabled (u); deleteBtn.setEnabled (u); }
+    void newGroove()
+    {
+        juce::PopupMenu m; m.addItem (1, TX ("Bateria")); m.addItem (2, TX ("Baixo")); m.addItem (3, TX ("Acordes")); m.addItem (4, TX ("Melodia"));
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&newBtn), [this] (int r)
+        {
+            if (r < 1 || ! svc.prompt) return; static const char* kinds[4] = { "Bateria", "Baixo", "Acordes", "Melodia" }; const std::string kind = kinds[r - 1];
+            svc.prompt (TX ("Novo groove"), TX ("D\xC3\xA1 um nome. Depois clica na grelha para desenhar as notas \xE2\x80\x94 fica guardado em \"MEUS\"."), TX ("Meu groove"), TX ("Criar"),
+                [this, kind] (const juce::String& nm) -> juce::String
+                {
+                    const auto n = nm.trim(); if (n.isEmpty()) return TX ("Escolhe um nome.");
+                    sk::Groove g; g.name = n.toStdString(); g.kind = kind; g.style = styleIdx > 0 && styleIdx < 8 ? styleIds[(size_t) styleIdx] : "trap";
+                    g.bpm = (int) bpmSlider.getValue(); g.bars = 2; g.user = true;
+                    if (auto* s = sk::GrooveStore::get().save (g)) selectGroove (s); return {};
+                });
+        });
+    }
+    void chooseMidi()
+    {
+        midiChooser = std::make_shared<juce::FileChooser> (TX ("Importar MIDI"), juce::File::getSpecialLocation (juce::File::userMusicDirectory), "*.mid;*.midi");
+        midiChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) { const auto f = fc.getResult(); if (f != juce::File()) importMidiFile (f); });
+    }
+    void importMidiFile (const juce::File& f)
+    {
+        sk::Groove g; juce::String err; const std::string style = styleIdx > 0 && styleIdx < 8 ? styleIds[(size_t) styleIdx] : "trap";
+        if (! sk::GrooveStore::importMidi (f, style, g, err)) { if (svc.toast) svc.toast (err, true); return; }
+        if (auto* s = sk::GrooveStore::get().save (g, &err))
+        {
+            selectGroove (s);
+            if (svc.toast) svc.toast (TX ("MIDI importado: ") + TX (s->name.c_str()) + TX ("  \xC2\xB7  ") + TX (s->kind.c_str()) + TX ("  \xC2\xB7  ") + juce::String (s->bars) + (s->bars == 1 ? TX (" compasso") : TX (" compassos")), false);
+        }
+        else if (svc.toast) svc.toast (err, true);
+    }
+    void renameCurrent()
+    {
+        auto* g = editing(); if (! g || ! g->user || ! svc.prompt) return;
+        svc.prompt (TX ("Mudar nome"), TX ("Nome do groove."), TX (g->name.c_str()), TX ("Guardar"), [this] (const juce::String& nm) -> juce::String
+        { const auto n = nm.trim(); if (n.isEmpty()) return TX ("Escolhe um nome."); if (auto* g2 = editing()) { g2->name = n.toStdString(); saveCurrent(); } return {}; });
+    }
+    void deleteCurrent()
+    {
+        auto* g = editing(); if (! g || ! g->user) return;
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::QuestionIcon, TX ("Apagar groove"), TX ("Apagar \"") + TX (g->name.c_str()) + TX ("\"? Isto n\xC3\xA3o se pode desfazer."), TX ("Apagar"), TX ("Cancelar"), this),
+            [this, g] (int r)
+            {
+                if (r != 1) return; if (playing) proc.groove.stop();
+                sk::GrooveStore::get().remove (g); rebuild();
+            });
+    }
+    bool isInterestedInFileDrag (const juce::StringArray& f) override { for (auto& s : f) if (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi")) return true; return false; }
+    void filesDropped (const juce::StringArray& f, int, int) override { for (auto& s : f) if (s.endsWithIgnoreCase (".mid") || s.endsWithIgnoreCase (".midi")) importMidiFile (juce::File (s)); }
     void refreshSoundBtn()
     {
         const auto k = proc.grooveSoundKey(); juce::String s;
@@ -295,7 +445,7 @@ private:
     }
     void applyStyleMode()
     {
-        const int idx = styleIdx > 0 ? styleIdx : 1; const std::string st = styleIds[(size_t) idx]; if (styleIdx == 0) setStyleFilter (idx);
+        const int idx = styleIdx > 0 && styleIdx < 8 ? styleIdx : 1; const std::string st = styleIds[(size_t) idx]; if (styleIdx == 0) setStyleFilter (idx);
         proc.setReal (P_ARP_PATTERN, (float) (idx));                   // trap 1, rnb 2, afrobeat 3, amapiano 4, drill 5, kizomba 6, kuduro 7
         const auto& L = proc.presetList(); bool loaded = false;
         for (size_t i = 0; i < L.size() && ! loaded; ++i) if (L[i].pack == st && ! proc.presetIsLocked (L[i])) { proc.loadPresetIndex ((int) i); loaded = true; }
@@ -333,14 +483,14 @@ private:
         const bool d = gr.kind == "Bateria"; g.setColour (d ? theme::accent2() : theme::accent()); g.setFont (theme::font (10.5f, true));
         g.drawText (TX (gr.kind.c_str()).toUpperCase(), 12, 0, 74, h, juce::Justification::centredLeft);
         g.setColour (theme::text()); g.setFont (theme::font (13.5f, true)); g.drawText (TX (gr.name.c_str()), 90, 2, w - 190, 18, juce::Justification::centredLeft);
-        g.setColour (theme::dim()); g.setFont (theme::font (11.0f)); g.drawText (TX (gr.style.c_str()), 90, 19, w - 190, 14, juce::Justification::centredLeft);
+        g.setColour (theme::dim()); g.setFont (theme::font (11.0f)); g.drawText (TX (gr.style.c_str()) + (gr.user ? TX ("   \xC2\xB7  MEU") : juce::String()), 90, 19, w - 190, 14, juce::Justification::centredLeft);
         g.drawText (juce::String (gr.bpm) + " bpm", w - 96, 0, 84, h, juce::Justification::centredRight);
     }
     void selectedRowsChanged (int row) override { if (row != selRow) { selRow = row; onSelect(); } }
     void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { restart(); }
 
     Services& svc; juce::OwnedArray<juce::TextButton> styleBtns; std::vector<std::string> styleIds; int styleIdx = 0;
-    juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn, soundBtn; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
+    juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn, soundBtn, newBtn, importBtn, renameBtn, deleteBtn; std::shared_ptr<juce::FileChooser> midiChooser; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
     std::vector<const sk::Groove*> rows; int selRow = -1; bool playing = false;
 };
 }
