@@ -89,6 +89,17 @@ public:
     juce::MidiKeyboardState keyboardState;
     juce::MidiMessageCollector uiMidi;                    // pitch bend / mod wheel vindos da interface (rodas do teclado)
     sk::GroovePlayer groove;                              // reprodutor de grooves (injeta notas no MIDI de entrada)
+    // ---- camada do groove: segundo motor com som próprio (ex.: kit do estilo) enquanto tocas noutro som ----
+    //   chave: "auto" (bateria → kit do estilo; o resto → o teu som) | "same" (tudo no teu som) | nome de um preset
+    void prepareGrooveLayer (const sk::Groove& g);        // escolhe o som conforme o groove; chamar antes de groove.start
+    juce::String grooveSoundKey() const { return apvts.state.getProperty ("grooveSound", "auto").toString(); }
+    void setGrooveSoundKey (const juce::String& k) { apvts.state.setProperty ("grooveSound", k, nullptr); }
+    float grooveVolume() const { return gVol.load(); }
+    void setGrooveVolume (float v) { gVol.store (juce::jlimit (0.0f, 1.5f, v)); apvts.state.setProperty ("grooveVol", gVol.load(), nullptr); }
+    float groovePan() const { return gPan.load(); }
+    void setGroovePan (float v) { gPan.store (juce::jlimit (-1.0f, 1.0f, v)); apvts.state.setProperty ("groovePan", gPan.load(), nullptr); }
+    bool grooveLayerOn() const { return gLayerOn.load(); }
+    juce::String grooveLayerName() const { const juce::ScopedLock sl (libLock); return gLayerName; }
     std::function<void()> onPresetLoaded;                // chamado na thread de mensagens
 
     // propriedades de interface guardadas no estado do plugin
@@ -112,6 +123,14 @@ private:
     std::array<std::atomic<float>*, sk::P_COUNT> raw {};
     float prm[sk::P_COUNT] = {};
     std::unique_ptr<sk::Engine> engine;
+    std::unique_ptr<sk::Engine> engineG;                  // camada do groove
+    float prmG[2][sk::P_COUNT] = {};                      // parâmetros da camada (duplo buffer: a UI escreve no inativo e troca)
+    std::atomic<int> gActive { 0 }, gSmp[2] = { { 0 }, { 0 } };
+    std::atomic<bool> gLayerOn { false }, gFlushMain { false }, gFlushG { false };
+    std::atomic<float> gVol { 0.85f }, gPan { 0.0f };
+    juce::String gSampleId[2], gLayerName;
+    std::vector<float> gTmpL, gTmpR; std::vector<sk::GMidiEvent> gEvs;
+    const sk::Preset* kitPresetFor (const std::string& style) const;
     sk::MidiFx midiFx;
     std::vector<sk::NoteEvent> evs;
     std::vector<sk::GMidiEvent> grooveEvs;

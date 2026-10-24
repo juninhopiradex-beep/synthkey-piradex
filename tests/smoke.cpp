@@ -89,6 +89,27 @@ int main()
             if (pk < 0.01f) { ++grooveFail; std::printf ("FALHOU: groove de bateria mudo\n"); }
         }
     }
+    // ---- camada do groove: bateria num motor à parte enquanto tocas outro som
+    {
+        proc.setGrooveSoundKey ("auto"); proc.loadPresetIndex (0); juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+        const sk::Groove* dr = nullptr; for (auto& g : sk::allGrooves()) if (g.kind == "Bateria") { dr = &g; break; }
+        if (dr)
+        {
+            juce::MidiBuffer mb; proc.prepareGrooveLayer (*dr);
+            if (! proc.grooveLayerOn() || proc.grooveLayerName().isEmpty()) { ++grooveFail; std::printf ("FALHOU: camada do groove nao ativou\n"); }
+            proc.groove.start (*dr, 0, 0); float pkG = 0, pkBoth = 0;
+            for (int b = 0; b < 300; ++b) { mb.clear(); buf.clear(); proc.processBlock (buf, mb); for (int s = 0; s < 256; ++s) pkG = std::max (pkG, std::abs (buf.getSample (0, s))); }
+            for (int b = 0; b < 300; ++b) { mb.clear(); if (b == 0) mb.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); buf.clear(); proc.processBlock (buf, mb); for (int s = 0; s < 256; ++s) pkBoth = std::max (pkBoth, std::abs (buf.getSample (0, s))); }
+            proc.groove.stop(); mb.clear(); mb.addEvent (juce::MidiMessage::noteOff (1, 60), 0); buf.clear(); proc.processBlock (buf, mb);
+            std::printf ("camada groove '%s': so groove %.1f dB, groove+tu %.1f dB, voz=%d\n", proc.grooveLayerName().toRawUTF8(), 20.0 * std::log10 (std::max (pkG, 1e-10f)), 20.0 * std::log10 (std::max (pkBoth, 1e-10f)), proc.voiceCount.load());
+            if (pkG < 0.01f) { ++grooveFail; std::printf ("FALHOU: camada do groove muda\n"); }
+            if (pkBoth < pkG * 0.5f || pkBoth > 1.0001f) { ++grooveFail; std::printf ("FALHOU: groove + notas tocadas\n"); }
+            // modo "igual ao teu som": a camada desliga
+            proc.setGrooveSoundKey ("same"); proc.prepareGrooveLayer (*dr);
+            if (proc.grooveLayerOn()) { ++grooveFail; std::printf ("FALHOU: camada devia estar desligada\n"); }
+            proc.setGrooveSoundKey ("auto");
+        }
+    }
     // ---- importação do utilizador: sample tonal (altura detetada), percussivo, wavetable
     int importFail = 0;
     {

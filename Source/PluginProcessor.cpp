@@ -52,7 +52,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 SynthKeyProcessor::SynthKeyProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "SYNTHKEY", createLayout()),
-      engine (new Engine())
+      engine (new Engine()), engineG (new Engine())
 {
     for (int i = 0; i < P_COUNT; ++i)
     {
@@ -62,6 +62,8 @@ SynthKeyProcessor::SynthKeyProcessor()
     }
     for (int i = 0; i < P_COUNT; ++i) prm[i] = kParams[i].def;
     engine->setParams (prm); midiFx.setParams (prm);
+    for (auto& b : prmG) for (int i = 0; i < P_COUNT; ++i) b[i] = kParams[i].def;
+    engineG->setParams (prmG[0]);
 
     auto& hub = PackHub::get();
     hub.addChangeListener (this);
@@ -86,6 +88,8 @@ void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sr = sampleRate; engineMax = std::max (512, samplesPerBlock); uiMidi.reset (sampleRate);
     engine->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0);
     engine->prepare (sampleRate, engineMax); midiFx.prepare ((float) sampleRate);
+    engineG->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0); engineG->prepare (sampleRate, engineMax);
+    gTmpL.assign ((size_t) engineMax, 0.0f); gTmpR.assign ((size_t) engineMax, 0.0f); gEvs.reserve (1024);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
     { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); }
     setLatencySamples (engine->latencySamples());
@@ -107,8 +111,8 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     for (int i = 0; i < P_COUNT; ++i) prm[i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;
     prm[P_A_SMP] = (float) smpIdx[0].load(); prm[P_B_SMP] = (float) smpIdx[1].load();
 
-    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
-    if (auto* pl = pendingLib.exchange (nullptr)) { engine->setLibrary (pl); engineLib.store (pl); midiFx.allNotesOff(); }
+    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); engineG->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
+    if (auto* pl = pendingLib.exchange (nullptr)) { engine->setLibrary (pl); engineG->setLibrary (pl); engineLib.store (pl); midiFx.allNotesOff(); }
 
     double bpm = 120.0, ppq = 0.0; bool playing = false;
     if (auto* ph = getPlayHead())
@@ -122,8 +126,14 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // ---- grooves internos: as notas entram no mesmo caminho do MIDI externo (escala / acordes / arpejador)
     grooveEvs.clear(); groove.process (n, sr, grooveEvs);
+    if (gFlushMain.exchange (false)) midiFx.allNotesOff();
+    if (gFlushG.exchange (false)) engineG->panic();
+    const bool layer = gLayerOn.load(); gEvs.clear();
     for (const auto& ge : grooveEvs)
-        midi.addEvent (ge.on ? juce::MidiMessage::noteOn (1, ge.note, (juce::uint8) ge.vel) : juce::MidiMessage::noteOff (1, ge.note), ge.offset);
+    {
+        if (layer) gEvs.push_back (ge);
+        else midi.addEvent (ge.on ? juce::MidiMessage::noteOn (1, ge.note, (juce::uint8) ge.vel) : juce::MidiMessage::noteOff (1, ge.note), ge.offset);
+    }
 
     // ---- MIDI de entrada -> MidiFx (escala / acordes / arpejador)
     float pitchBend = 0, aftertouch = 0; bool gotPb = false, gotAt = false;
@@ -173,6 +183,36 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         if (e.on) engine->noteOn (e.note, e.vel); else engine->noteOff (e.note);
     }
     renderTo (n);
+    // ---- camada do groove: segundo motor, mistura com volume e pan próprios
+    if (layer || engineG->activeVoices() > 0)
+    {
+        float* gp = prmG[gActive.load()]; gp[P_A_SMP] = (float) gSmp[0].load(); gp[P_B_SMP] = (float) gSmp[1].load();
+        engineG->setParams (gp); engineG->setBpm (bpm);
+        std::stable_sort (gEvs.begin(), gEvs.end(), [] (const sk::GMidiEvent& a, const sk::GMidiEvent& b) { return a.offset < b.offset; });
+        const float vol = gVol.load(), pan = gPan.load(), gl = vol * std::min (1.0f, 1.0f - pan), gr = vol * std::min (1.0f, 1.0f + pan);
+        int gpos = 0;
+        auto gRender = [&] (int end)
+        {
+            while (gpos < end)
+            {
+                const int c = std::min (end - gpos, engineMax);
+                engineG->render (gTmpL.data(), gTmpR.data(), c);
+                for (int i = 0; i < c; ++i) { L[gpos + i] += gTmpL[(size_t) i] * gl; R[gpos + i] += gTmpR[(size_t) i] * gr; }
+                gpos += c;
+            }
+        };
+        for (const auto& e : gEvs)
+        {
+            gRender (juce::jlimit (gpos, n, e.offset));
+            if (e.on) engineG->noteOn (e.note, (float) e.vel / 127.0f); else engineG->noteOff (e.note);
+        }
+        gRender (n);
+        for (int i = 0; i < n; ++i)            // segurança: duas fontes somadas podem passar 0 dB
+        {
+            auto sc = [] (float x) { const float a = std::fabs (x); return a <= 0.9f ? x : std::copysign (0.9f + 0.1f * std::tanh ((a - 0.9f) / 0.1f), x); };
+            L[i] = sc (L[i]); R[i] = sc (R[i]);
+        }
+    }
     for (int i = 0; i < nReleased; ++i) { engine->setNotePressure (releasedNotes[i], 0.0f); engine->setNoteSlide (releasedNotes[i], 0.0f); if (mpe) engine->setNoteBend (releasedNotes[i], 0.0f); }
     if (buffer.getNumChannels() > 1) { /* R já escrito */ } else { /* mono: L contém o canal esquerdo */ }
 
@@ -197,7 +237,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         for (int i = 0; i < n; ++i) { scopeBuf[w] = 0.5f * (L[i] + R[i]); w = (w + 1) & (kScopeSize - 1); }
         scopeWrite.store (w, std::memory_order_release);
     }
-    meterL.store (engine->getPeakL()); meterR.store (engine->getPeakR()); voiceCount.store (engine->activeVoices());
+    meterL.store (engine->getPeakL()); meterR.store (engine->getPeakR()); voiceCount.store (engine->activeVoices() + engineG->activeVoices());
 }
 
 void SynthKeyProcessor::setReal (int idx, float v)
@@ -247,8 +287,14 @@ std::string SynthKeyProcessor::fallbackFor (const std::string& id)
 
 void SynthKeyProcessor::resolveSamples()
 {
-    std::shared_ptr<const Library> lib; juce::String ids[2];
-    { const juce::ScopedLock sl (libLock); lib = combined; ids[0] = sampleId[0]; ids[1] = sampleId[1]; }
+    std::shared_ptr<const Library> lib; juce::String ids[2], gids[2];
+    { const juce::ScopedLock sl (libLock); lib = combined; ids[0] = sampleId[0]; ids[1] = sampleId[1]; gids[0] = gSampleId[0]; gids[1] = gSampleId[1]; }
+    for (int e = 0; e < 2; ++e)         // camada do groove
+    {
+        int idx = -1; if (gids[e].isNotEmpty() && lib) { idx = lib->indexOf (gids[e].toStdString()); if (idx < 0) idx = lib->indexOf (fallbackFor (gids[e].toStdString())); }
+        if (idx < 0 && lib && ! lib->inst.empty()) idx = 0;
+        gSmp[e].store (std::max (0, idx));
+    }
     for (int e = 0; e < 2; ++e)
     {
         int idx = -1; bool miss = false;
@@ -261,6 +307,39 @@ void SynthKeyProcessor::resolveSamples()
         smpIdx[e].store (std::max (0, idx)); missing[e].store (miss && ids[e].isNotEmpty());
     }
     updatePreviewState();
+}
+
+const Preset* SynthKeyProcessor::kitPresetFor (const std::string& style) const
+{
+    for (const auto& p : presets) if (p.pack == style && p.category == "Bateria" && p.name.rfind ("Kit", 0) == 0 && ! presetIsLocked (p)) return &p;
+    for (const auto& p : presets) if (p.pack == "nucleo" && p.category == "Bateria" && p.name.rfind ("Kit", 0) == 0) return &p;
+    return nullptr;
+}
+
+void SynthKeyProcessor::prepareGrooveLayer (const Groove& g)
+{
+    const juce::String key = grooveSoundKey();
+    const Preset* chosen = nullptr;
+    if (key == "same") {}
+    else if (key == "auto") { if (g.kind == "Bateria") chosen = kitPresetFor (g.style); }
+    else for (const auto& p : presets) if (juce::String (p.name) == key) { chosen = &p; break; }
+    if (chosen && presetIsLocked (*chosen)) chosen = kitPresetFor (g.style);
+    const bool was = gLayerOn.load();
+    if (! chosen)
+    {
+        if (was) { gFlushG.store (true); gLayerOn.store (false); }
+        { const juce::ScopedLock sl (libLock); gLayerName = {}; }
+        return;
+    }
+    const int w = 1 - gActive.load();
+    for (int i = 0; i < P_COUNT; ++i) prmG[w][i] = chosen->get (i);
+    { const juce::ScopedLock sl (libLock); gSampleId[0] = U (chosen->sampleA.c_str()); gSampleId[1] = U (chosen->sampleB.c_str()); gLayerName = U (chosen->name.c_str()); }
+    for (const auto& id : { chosen->sampleA, chosen->sampleB })
+        if (! id.empty()) { const auto pack = PackHub::packOfInstrument (id); PackEntry pe; if (PackHub::get().entry (pack, pe) && pe.installed) PackHub::get().ensureLoaded (pack); }
+    resolveSamples();
+    gActive.store (w);
+    if (! was) gFlushMain.store (true);                 // notas que ficaram no motor principal
+    gLayerOn.store (true);
 }
 
 juce::String SynthKeyProcessor::getSampleId (int e) const { const juce::ScopedLock sl (libLock); return sampleId[e]; }
@@ -488,6 +567,7 @@ void SynthKeyProcessor::setStateInformation (const void* data, int size)
             presetName = vt.getProperty ("presetName", "Init").toString();
             decodeUserWavetable (vt.getProperty ("userWT", "").toString()); userWtName = vt.getProperty ("userWTName", "").toString();
             setSampleId (0, vt.getProperty ("sampleA", "").toString()); setSampleId (1, vt.getProperty ("sampleB", "").toString());
+            gVol.store ((float) (double) vt.getProperty ("grooveVol", 0.85)); gPan.store ((float) (double) vt.getProperty ("groovePan", 0.0));
             refreshPresetList();
             if (onPresetLoaded) onPresetLoaded();
         }

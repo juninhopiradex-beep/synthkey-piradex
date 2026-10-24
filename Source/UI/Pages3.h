@@ -228,7 +228,13 @@ public:
         addAndMakeVisible (bpmSlider); bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal); bpmSlider.setRange (60.0, 200.0, 1.0); bpmSlider.setValue (120.0, juce::dontSendNotification);
         bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 24); bpmSlider.setTextValueSuffix (" bpm"); bpmSlider.setBounds (750, 352, 392, 32);
         bpmSlider.onValueChange = [this] { if (playing) proc.groove.setBpm (bpmSlider.getValue()); };
-        addAndMakeVisible (drag); drag.setBounds (494, 402, 648, 44); drag.makeFile = [this] { return exportMidi(); };
+        addAndMakeVisible (drag); drag.setBounds (494, 402, 290, 44); drag.makeFile = [this] { return exportMidi(); };
+        addAndMakeVisible (soundBtn); soundBtn.setBounds (796, 402, 226, 44); soundBtn.onClick = [this] { chooseSound(); };
+        soundBtn.setTooltip (TX ("Som do groove: toca num motor \xC3\xA0 parte (ex.: kit de bateria), por isso podes tocar outro som por cima ao mesmo tempo"));
+        addAndMakeVisible (volSlider); volSlider.setSliderStyle (juce::Slider::LinearHorizontal); volSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        volSlider.setRange (0.0, 1.5, 0.01); volSlider.setValue (proc.grooveVolume(), juce::dontSendNotification); volSlider.setDoubleClickReturnValue (true, 0.85);
+        volSlider.setTooltip (TX ("Volume do groove")); volSlider.setBounds (1030, 402, 112, 44); volSlider.onValueChange = [this] { proc.setGrooveVolume ((float) volSlider.getValue()); };
+        refreshSoundBtn();
         setStyleFilter (0);
     }
     void tick() override
@@ -260,7 +266,33 @@ private:
     void onSelect() { if (const auto* g = selected()) bpmSlider.setValue (g->bpm, juce::dontSendNotification); if (playing) restart(); repaint(); }
     int transposeSemis() const { const int k = keyBox.getSelectedId() - 1; return k <= 6 ? k : k - 12; }
     void togglePlay() { if (playing) { proc.groove.stop(); } else restart(); }
-    void restart() { if (const auto* g = selected()) proc.groove.start (*g, transposeSemis(), bpmSlider.getValue()); }
+    void restart() { if (const auto* g = selected()) { proc.prepareGrooveLayer (*g); refreshSoundBtn(); proc.groove.start (*g, transposeSemis(), bpmSlider.getValue()); } }
+    void refreshSoundBtn()
+    {
+        const auto k = proc.grooveSoundKey(); juce::String s;
+        if (k == "auto") s = proc.grooveLayerOn() ? TX ("Auto \xC2\xB7 ") + proc.grooveLayerName() : TX ("Auto \xC2\xB7 o teu som");
+        else if (k == "same") s = TX ("Igual ao teu som"); else s = k;
+        soundBtn.setButtonText (TX ("SOM: ") + s);
+    }
+    void chooseSound()
+    {
+        juce::PopupMenu m; m.addItem (1, TX ("Auto \xE2\x80\x94 kit do estilo na bateria, o resto no teu som"), true, proc.grooveSoundKey() == "auto");
+        m.addItem (2, TX ("Igual ao teu som"), true, proc.grooveSoundKey() == "same"); m.addSeparator();
+        const auto& L = proc.presetList(); std::vector<std::string> cats;
+        for (auto& p : L) if (std::find (cats.begin(), cats.end(), p.category) == cats.end()) cats.push_back (p.category);
+        std::sort (cats.begin(), cats.end());
+        for (auto& cat : cats)
+        {
+            juce::PopupMenu sub; for (size_t i = 0; i < L.size(); ++i) if (L[i].category == cat) sub.addItem (100 + (int) i, TX (L[i].name.c_str()), ! proc.presetIsLocked (L[i]), proc.grooveSoundKey() == juce::String (L[i].name));
+            m.addSubMenu (TX (cat.empty() ? "Outros" : cat.c_str()), sub);
+        }
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&soundBtn), [this] (int r)
+        {
+            if (r == 1) proc.setGrooveSoundKey ("auto"); else if (r == 2) proc.setGrooveSoundKey ("same");
+            else if (r >= 100 && r - 100 < (int) proc.presetList().size()) proc.setGrooveSoundKey (juce::String (proc.presetList()[(size_t) (r - 100)].name)); else return;
+            if (playing) restart(); else if (const auto* g = selected()) { proc.prepareGrooveLayer (*g); } refreshSoundBtn();
+        });
+    }
     void applyStyleMode()
     {
         const int idx = styleIdx > 0 ? styleIdx : 1; const std::string st = styleIds[(size_t) idx]; if (styleIdx == 0) setStyleFilter (idx);
@@ -308,7 +340,7 @@ private:
     void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { restart(); }
 
     Services& svc; juce::OwnedArray<juce::TextButton> styleBtns; std::vector<std::string> styleIds; int styleIdx = 0;
-    juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
+    juce::ComboBox kindBox, keyBox; juce::TextButton styleModeBtn, playBtn, soundBtn; juce::Slider volSlider; juce::ListBox list; GrooveRoll roll; juce::Slider bpmSlider; MidiDragHandle drag;
     std::vector<const sk::Groove*> rows; int selRow = -1; bool playing = false;
 };
 }
