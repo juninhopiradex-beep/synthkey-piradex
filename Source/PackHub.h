@@ -37,6 +37,13 @@ public:
     bool isLoading (const std::string& packId) const;
     bool isLoadFailed (const std::string& packId) const;
 
+    // ---- samples do utilizador (pasta Samples) — aparecem como o grupo "Utilizador"
+    std::shared_ptr<const sk::Library> userLibrary() const;
+    std::vector<sk::packio::PackInfo::Inst> userInstruments() const;
+    juce::String importUserSample (const juce::File& src, std::string* newId = nullptr);   // copia, analisa e recarrega; erro ou ""
+    juce::String removeUserSample (const std::string& instId);
+    void reloadUserSamples();
+
     juce::String install (const juce::File& src);           // copia um .bfpack para a pasta do utilizador; devolve erro ou ""
     juce::String uninstall (const std::string& packId);
 
@@ -55,6 +62,9 @@ private:
     std::map<std::string, std::vector<sk::Preset>> presetsOf;
     std::map<std::string, std::shared_ptr<const sk::Library>> libs;
     std::set<std::string> loading, failed;
+    std::shared_ptr<const sk::Library> userLib;
+    struct UserCacheItem { juce::int64 mod = 0, size = 0; sk::Library lib; };
+    std::map<std::string, UserCacheItem> userCache;     // por caminho: evita reler ficheiros que não mudaram
     std::vector<sk::PackDef> defs;
     std::unique_ptr<juce::ThreadPool> pool;
 };

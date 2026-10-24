@@ -19,6 +19,7 @@ inline juce::File userDir()
     return d;
 }
 inline juce::File userPacks()    { auto d = userDir().getChildFile ("Packs");   d.createDirectory(); return d; }
+inline juce::File userSamples()  { auto d = userDir().getChildFile ("Samples"); d.createDirectory(); return d; }
 inline juce::File userPresets()  { auto d = userDir().getChildFile ("Presets"); d.createDirectory(); return d; }
 
 // instalação para todos os utilizadores:  macOS /Library/Application Support/...   Windows C:\ProgramData\...

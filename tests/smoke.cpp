@@ -2,6 +2,7 @@
 // toca uma nota em cada um e verifica que há som, sem NaN/Inf e sem rebentar.
 //   SK_TEST_PW=<senha master ou beta> ./synthkey_smoke
 #include "../Source/PluginProcessor.h"
+#include "../Source/UserAudio.h"
 #include <cmath>
 #include <cstdio>
 
@@ -88,6 +89,50 @@ int main()
             if (pk < 0.01f) { ++grooveFail; std::printf ("FALHOU: groove de bateria mudo\n"); }
         }
     }
+    // ---- importação do utilizador: sample tonal (altura detetada), percussivo, wavetable
+    int importFail = 0;
+    {
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sk_import_test"); tmp.createDirectory();
+        auto writeWav = [&] (const juce::String& name, const std::vector<float>& d, double sr) -> juce::File
+        {
+            auto f = tmp.getChildFile (name); f.deleteFile();
+            juce::WavAudioFormat wav; std::unique_ptr<juce::FileOutputStream> os (f.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), sr, 1, 24, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> b (1, (int) d.size()); std::copy (d.begin(), d.end(), b.getWritePointer (0)); w->writeFromAudioSampleBuffer (b, 0, (int) d.size()); }
+            return f;
+        };
+        std::vector<float> sine (48000), noise (12000); unsigned rs = 12345;
+        for (size_t i = 0; i < sine.size(); ++i) sine[i] = 0.5f * std::sin (6.283185307f * 220.0f * (float) i / 48000.0f) * std::exp (-(float) i / 30000.0f);
+        for (size_t i = 0; i < noise.size(); ++i) { rs = rs * 1664525u + 1013904223u; noise[i] = ((float) (rs >> 8) / 8388608.0f - 1.0f) * std::exp (-(float) i / 1500.0f); }
+        auto& hub = PackHub::get(); std::string idT, idP;
+        auto e1 = hub.importUserSample (writeWav ("sk_teste_tonal.wav", sine, 48000.0), &idT);
+        auto e2 = hub.importUserSample (writeWav ("sk_teste_perc.wav", noise, 44100.0), &idP);
+        auto lib = hub.userLibrary(); const sk::Instrument* iT = nullptr; const sk::Instrument* iP = nullptr;
+        if (lib) for (auto& i : lib->inst) { if (i.id == idT) iT = &i; if (i.id == idP) iP = &i; }
+        std::printf ("import: tonal='%s' (%s) percussivo='%s' (%s)\n", idT.c_str(), e1.toRawUTF8(), idP.c_str(), e2.toRawUTF8());
+        if (e1.isNotEmpty() || e2.isNotEmpty() || ! iT || ! iP) { ++importFail; std::printf ("FALHOU: importacao de samples\n"); }
+        else
+        {
+            std::printf ("   tonal: raiz %d fixa=%d | percussivo: raiz %d fixa=%d\n", iT->zones[0].root, (int) iT->fixedPitch, iP->zones[0].root, (int) iP->fixedPitch);
+            if (iT->zones[0].root != 57 || iT->fixedPitch) { ++importFail; std::printf ("FALHOU: altura do sample tonal (esperado 57 = 220 Hz)\n"); }
+            if (! iP->fixedPitch) { ++importFail; std::printf ("FALHOU: o ruido devia ser percussivo\n"); }
+            // toca o sample importado no motor A, nota 57 → 220 Hz
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+            proc.loadPresetIndex (0); juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+            proc.setReal (sk::P_A_ON, 1.0f); proc.setReal (sk::P_A_TYPE, 2.0f); proc.setReal (sk::P_B_ON, 0.0f); proc.setReal (sk::P_SUB_LEVEL, -60.0f); proc.setSampleId (0, juce::String (idT));
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+            float pk = 0; juce::MidiBuffer mb; for (int b = 0; b < 60; ++b) { mb.clear(); if (b == 0) mb.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0); buf.clear(); proc.processBlock (buf, mb); for (int s2 = 0; s2 < 256; ++s2) pk = std::max (pk, std::abs (buf.getSample (0, s2))); }
+            std::printf ("   sample importado a tocar: pico %.1f dB\n", 20.0 * std::log10 (std::max (pk, 1e-10f)));
+            if (pk < 0.01f) { ++importFail; std::printf ("FALHOU: sample importado mudo\n"); }
+        }
+        // wavetable (ciclos de 2048) + ida e volta pelo estado do projeto
+        std::vector<float> wt (4 * 2048); for (int c = 0; c < 4; ++c) for (int i = 0; i < 2048; ++i) wt[(size_t) (c * 2048 + i)] = std::sin (6.2831853f * (float) (c + 1) * (float) i / 2048.0f);
+        auto wf = writeWav ("sk_teste_wt.wav", wt, 48000.0);
+        const auto we = proc.importWavetable (wf);
+        juce::MemoryBlock st; proc.getStateInformation (st); proc.userWavetable().clear(); proc.setStateInformation (st.getData(), (int) st.getSize());
+        std::printf ("wavetable: %s | recarregada do estado: %d\n", we.isEmpty() ? "ok" : we.toRawUTF8(), (int) proc.userWavetable().loaded());
+        if (we.isNotEmpty() || ! proc.userWavetable().loaded()) { ++importFail; std::printf ("FALHOU: wavetable do utilizador\n"); }
+        hub.removeUserSample (idT); hub.removeUserSample (idP); tmp.deleteRecursively();
+    }
     proc.releaseResources();
-    return (bad == 0 && grooveFail == 0) ? 0 : 1;
+    return (bad == 0 && grooveFail == 0 && importFail == 0) ? 0 : 1;
 }

@@ -2,6 +2,11 @@
 #include "UI/Pages2.h"
 #include "UI/Pages3.h"
 #include "UI/Visual.h"
+#include "UI/Pages4.h"
+#include "UI/ImportUI.h"
+#include "UI/ModDrag.h"
+#include "UI/Help.h"
+#include "Core/SoundGen.h"
 #include "BinaryData.h"
 
 using namespace ui;
@@ -122,7 +127,7 @@ private:
 // ============================================================================================
 //  Vista principal (coordenadas de desenho 1180 × 760)
 // ============================================================================================
-class MainView : public juce::Component, private juce::Timer
+class MainView : public juce::Component, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
     explicit MainView (SynthKeyProcessor& p) : proc (p), keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
@@ -130,6 +135,7 @@ public:
         theme::paletteIndex() = juce::jlimit (0, 4, proc.getUiInt ("uiPalette", 0));
         mode = juce::jlimit (1, 3, proc.getUiInt ("uiMode", 2));
         svc.toast = [this] (const juce::String& t, bool e) { toast.show (t, e); };
+        ui::toastFn() = svc.toast;
         svc.prompt = [this] (const juce::String& t, const juce::String& i, const juce::String& init, const juce::String& ok, std::function<juce::String (const juce::String&)> cb) { prompt.open (t, i, init, ok, std::move (cb)); };
 
         addAndMakeVisible (backdrop); addAndMakeVisible (decor); decor.fn = [this] (juce::Graphics& g) { paintDecor (g); };
@@ -143,10 +149,10 @@ public:
         for (int i = 0; i < 5; ++i) { auto* d = new PaletteDot (i, [this] (int k) { setPalette (k); }); dots.add (d); addAndMakeVisible (d); }
         addAndMakeVisible (logout); logout.setButtonText (TX ("SAIR")); logout.onClick = [this] { AccessManager::get().logout(); };
         // ---- separadores
-        static const char* tabNames[kNumTabs] = { "SOM", "MATRIZ", "EFEITOS", "ARP", "VISUAL", "GROOVES", "PACKS", "ADMIN" };
+        static const char* tabNames[kNumTabs] = { "SOM", "MATRIZ", "MODULAD.", "EFEITOS", "ARP", "VISUAL", "GROOVES", "PACKS", "ADMIN" };
         for (int i = 0; i < kNumTabs; ++i) { auto* t = new TabBtn (TX (tabNames[i])); tabs.add (t); addAndMakeVisible (t); t->onClick = [this, i] { showTab (i); }; }
         // ---- páginas
-        pages.add (new SomPage (proc)); pages.add (new MatrixPage (proc)); pages.add (new FxPage (proc)); pages.add (new ArpPage (proc)); pages.add (new VisualPage (proc)); pages.add (new GroovesPage (proc, svc)); pages.add (new PacksPage (proc, svc));
+        pages.add (new SomPage (proc)); pages.add (new MatrixPage (proc)); pages.add (new ModulatorsPage (proc)); pages.add (new FxPage (proc)); pages.add (new ArpPage (proc)); pages.add (new VisualPage (proc)); pages.add (new GroovesPage (proc, svc)); pages.add (new PacksPage (proc, svc));
         for (auto* pg : pages) { addAndMakeVisible (pg); pg->setBounds (12, 108, 1156, 452); }
         // ---- macros + master
         static const char* macroNames[8] = { "BRILHO", "CORPO", "MOVIM.", "ESPAÇO", "LARGURA", "SUJIDADE", "BALANÇO", "DOBRA" };
@@ -154,7 +160,11 @@ public:
         master = std::make_unique<Knob> (proc, P_MASTER_VOL, TX ("VOLUME")); addAndMakeVisible (*master); master->setBounds (640, 578, 70, 76);
         addAndMakeVisible (meter); meter.setBounds (722, 584, 30, 64);
         addAndMakeVisible (panic); panic.setButtonText ("PANIC"); panic.onClick = [this] { proc.keyboardState.allNotesOff (1); for (int n = 0; n < 128; ++n) proc.keyboardState.noteOff (1, n, 0.0f); };
-        panic.setBounds (1080, 604, 80, 28);
+        panic.setBounds (1080, 604, 80, 26);
+        addAndMakeVisible (describeBtn); describeBtn.setButtonText (TX ("\xE2\x9C\xA6 DESCREVER")); describeBtn.onClick = [this] { openDescribe(); };
+        describeBtn.setBounds (1076, 574, 88, 26); describeBtn.setTooltip (TX ("Descreve o som em palavras e o SYNTHKEY cria o preset"));
+        addAndMakeVisible (helpBtn); helpBtn.setButtonText (TX ("? AJUDA")); helpBtn.onClick = [this] { help.open(); }; helpBtn.setBounds (1080, 633, 80, 24);
+        addAndMakeVisible (modStrip); modStrip.setBounds (790, 574, 276, 80);
         // ---- teclado
         addAndMakeVisible (keyboard); keyboard.setBounds (12, 662, 1156, 88); keyboard.setAvailableRange (24, 96); keyboard.setKeyWidth (1156.0f / 43.0f);
         keyboard.setLowestVisibleKey (24); keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xFFE9EDF8));
@@ -165,6 +175,7 @@ public:
         addChildComponent (browser); browser.setBounds (0, 0, 1180, 760);
         addChildComponent (toast); toast.setBounds (340, 540, 500, 44);
         addChildComponent (prompt); prompt.setBounds (0, 0, 1180, 760);
+        addChildComponent (help); help.setBounds (0, 0, 1180, 760);
         addChildComponent (login); login.setBounds (0, 0, 1180, 760); login.onUnlocked = [this] { syncAccess(); };
 
         backdrop.setBounds (0, 0, 1180, 760); decor.setBounds (0, 0, 1180, 760);
@@ -172,11 +183,12 @@ public:
         presetBtn.setButtonText (proc.currentPresetName());
         setMode (mode); showTab (juce::jlimit (0, kTabAdmin - 1, proc.getUiInt ("uiTab", 0)));
         syncAccess(); startTimerHz (30);
+        juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<MainView> (this)] { if (sp != nullptr && ! sp->login.isVisible()) sp->help.openIfFirstRun(); });
     }
-    ~MainView() override { proc.onPresetLoaded = nullptr; stopTimer(); }
+    ~MainView() override { proc.onPresetLoaded = nullptr; ui::toastFn() = nullptr; stopTimer(); }
 
     Services svc;
-    static constexpr int kNumTabs = 8, kTabAdmin = 7;
+    static constexpr int kNumTabs = 9, kTabAdmin = 8;
     void paintDecor (juce::Graphics& g)
     {
         // logótipo
@@ -196,7 +208,7 @@ public:
         }
         // rótulos
         g.setColour (theme::dim()); g.setFont (theme::font (10.0f, true)); g.drawText ("MACROS", 22, 567, 120, 12, juce::Justification::centredLeft);
-        g.drawText (juce::String (proc.voiceCount.load()) + (proc.voiceCount.load() == 1 ? " VOZ" : " VOZES"), 770, 600, 120, 16, juce::Justification::centredLeft);
+        g.drawText (juce::String (proc.voiceCount.load()) + (proc.voiceCount.load() == 1 ? " VOZ" : " VOZES"), 1080, 582, 90, 16, juce::Justification::centredLeft);
         g.setColour (theme::stroke()); g.drawVerticalLine (626, 580.0f, 652.0f);
     }
     void paintOverChildren (juce::Graphics& g) override
@@ -213,7 +225,7 @@ public:
 private:
     void timerCallback() override
     {
-        syncAccess();
+        syncAccess(); proc.undoWatch();
         if (currentTab < pages.size()) { if (auto* pg = pages[currentTab]) pg->tick(); }
         if (toast.expired()) toast.setVisible (false);
         meter.set (proc.meterL.load(), proc.meterR.load());
@@ -221,12 +233,30 @@ private:
         if (vc != lastVoices || pv != lastPreview || (++frame % 30) == 0) { lastVoices = vc; lastPreview = pv; decor.repaint(); repaint(); }
         if (presetBtn.getButtonText() != proc.currentPresetName()) presetBtn.setButtonText (proc.currentPresetName());
     }
+    // desfazer / refazer (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y)
+    void doUndo (bool undo)
+    {
+        const bool ok = undo ? proc.undo() : proc.redo();
+        toast.show (ok ? TX (undo ? "Desfeito." : "Refeito.") : TX (undo ? "Nada para desfazer." : "Nada para refazer."), false);
+        presetBtn.setButtonText (proc.currentPresetName()); repaint();
+    }
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        const auto m = k.getModifiers();
+        if (m.isCommandDown() || m.isCtrlDown())
+        {
+            const int c = k.getKeyCode();
+            if (c == 'Z' || c == 'z') { doUndo (! m.isShiftDown()); return true; }
+            if (c == 'Y' || c == 'y') { doUndo (false); return true; }
+        }
+        return false;
+    }
     void syncAccess()
     {
         auto& acc = AccessManager::get(); const bool unlocked = acc.isUnlocked();
-        if (login.isVisible() == unlocked) { login.setVisible (! unlocked); if (! unlocked) { login.toFront (true); login.focus(); } else { decor.repaint(); repaint(); keyboard.grabKeyboardFocus(); } }
+        if (login.isVisible() == unlocked) { login.setVisible (! unlocked); if (! unlocked) { login.toFront (true); login.focus(); } else { decor.repaint(); repaint(); keyboard.grabKeyboardFocus(); help.openIfFirstRun(); } }
         const bool admin = acc.isAdmin();
-        if (admin != adminShown) { adminShown = admin; if (admin && ! adminPage) { adminPage.reset (new AdminPage (proc, svc)); addAndMakeVisible (*adminPage); adminPage->setBounds (12, 108, 1156, 452); adminPage->setMode (mode); adminPage->setVisible (currentTab == 5); } layoutTabs(); if (! admin && currentTab == 5) showTab (0); }
+        if (admin != adminShown) { adminShown = admin; if (admin && ! adminPage) { adminPage.reset (new AdminPage (proc, svc)); addAndMakeVisible (*adminPage); adminPage->setBounds (12, 108, 1156, 452); adminPage->setMode (mode); adminPage->setVisible (currentTab == kTabAdmin); } layoutTabs(); if (! admin && currentTab == kTabAdmin) showTab (0); }
         if (unlocked != lastUnlocked) { lastUnlocked = unlocked; layoutTabs(); decor.repaint(); }
     }
     void layoutTabs()
@@ -270,24 +300,42 @@ private:
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetBtn).withMinimumWidth (presetBtn.getWidth()), [this] (int r)
         { if (r >= 2000 && r - 2000 < (int) presetIds.size()) proc.loadPresetIndex (presetIds[(size_t) (r - 2000)]); });
     }
+    void openDescribe()
+    {
+        prompt.open (TX ("\xE2\x9C\xA6 Descrever som"), TX ("Ex.: baixo escuro e agressivo \xC2\xB7 pad quente e largo \xC2\xB7 pluck brilhante curto \xC2\xB7 808 drill \xC2\xB7 amapiano log drum"), juce::String(), TX ("CRIAR"),
+            [this] (const juce::String& txt) -> juce::String
+            {
+                const auto pr = sk::soundgen::generateCalibrated (txt.trim().toStdString(), describeSeed++);
+                proc.loadPreset (pr, -1); toast.show (TX ("Criado: ") + TX (pr.name.c_str()) + TX ("  \xC2\xB7 carrega outra vez em CRIAR para variantes"), false); return {};
+            });
+    }
     void showToolsMenu()
     {
-        juce::PopupMenu m; m.addItem (1, TX ("Guardar preset\xE2\x80\xA6")); m.addItem (2, TX ("Preset vazio (Init)")); m.addItem (3, TX ("Aleatorizar timbre (suave)")); m.addItem (4, TX ("Aleatorizar timbre (forte)"));
+        juce::PopupMenu m; m.addItem (6, TX ("Desfazer   (Ctrl/Cmd+Z)"), proc.canUndo()); m.addItem (7, TX ("Refazer   (Ctrl/Cmd+Shift+Z)"), proc.canRedo()); m.addSeparator();
+        m.addItem (1, TX ("Guardar preset\xE2\x80\xA6")); m.addItem (2, TX ("Preset vazio (Init)")); m.addItem (3, TX ("Aleatorizar timbre (suave)")); m.addItem (4, TX ("Aleatorizar timbre (forte)"));
+        m.addItem (8, TX ("\xE2\x9C\xA6 Descrever som\xE2\x80\xA6")); m.addItem (9, TX ("Ajuda e novidades"));
         m.addSeparator(); m.addItem (5, TX ("Abrir pasta de presets do utilizador"));
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&menuBtn), [this] (int r)
         {
-            if (r == 1) prompt.open (TX ("Guardar preset"), TX ("O preset fica na sua pasta de presets e aparece em \"Utilizador\"."), proc.currentPresetName() == "Init" ? juce::String() : proc.currentPresetName(), TX ("GUARDAR"),
-                [this] (const juce::String& n) -> juce::String { juce::String err; if (! proc.saveUserPreset (n, err)) return err; toast.show (TX ("Preset guardado."), false); return {}; });
+            if (r == 1) prompt.open (TX ("Guardar preset"), TX ("Aparece em \"Utilizador\". Etiquetas opcionais depois de # \xE2\x80\x94 ex.: Meu Lead #lead, brilhante, agressivo"), proc.currentPresetName() == "Init" ? juce::String() : proc.currentPresetName(), TX ("GUARDAR"),
+                [this] (const juce::String& txt) -> juce::String
+                {
+                    const auto hash = txt.indexOfChar ('#'); const auto n = (hash >= 0 ? txt.substring (0, hash) : txt).trim();
+                    juce::StringArray tags; if (hash >= 0) tags.addTokens (txt.substring (hash + 1).replaceCharacter ('#', ','), ",", "");
+                    juce::String err; if (! proc.saveUserPreset (n, err, tags)) return err;
+                    toast.show (TX ("Preset guardado.") + (tags.size() ? TX ("  (com etiquetas)") : juce::String()), false); return {};
+                });
             else if (r == 2) proc.initPreset(); else if (r == 3) proc.randomizePatch (0.25f); else if (r == 4) proc.randomizePatch (0.7f);
             else if (r == 5) PackHub::userPresetFolder().revealToUser();
+            else if (r == 6) doUndo (true); else if (r == 7) doUndo (false); else if (r == 8) openDescribe(); else if (r == 9) help.open();
         });
     }
 
     SynthKeyProcessor& proc; int mode = 2, currentTab = 0, lastVoices = -1, lastPreview = -1, frame = 0; bool adminShown = false, lastUnlocked = false;
-    Backdrop backdrop; Decor decor; juce::TextButton prevBtn, nextBtn, menuBtn, presetBtn, logout, panic;
+    Backdrop backdrop; Decor decor; juce::TextButton prevBtn, nextBtn, menuBtn, presetBtn, logout, panic, describeBtn, helpBtn;
     juce::OwnedArray<ModeBtn> modeBtns; juce::OwnedArray<PaletteDot> dots; juce::OwnedArray<TabBtn> tabs; juce::OwnedArray<Page> pages; std::unique_ptr<AdminPage> adminPage;
-    juce::OwnedArray<Knob> macros; std::unique_ptr<Knob> master; Meter meter; juce::MidiKeyboardComponent keyboard;
-    Toast toast; PromptOverlay prompt; LoginOverlay login; std::vector<int> presetIds;
+    juce::OwnedArray<Knob> macros; std::unique_ptr<Knob> master; Meter meter; ModSourceStrip modStrip; juce::MidiKeyboardComponent keyboard;
+    Toast toast; PromptOverlay prompt; HelpOverlay help; LoginOverlay login; unsigned describeSeed = 1; std::vector<int> presetIds;
     PresetBrowser browser { proc, [this] (const juce::String& t, bool e) { toast.show (t, e); } };
 public:
     void layoutHeader()
@@ -322,5 +370,11 @@ void SynthKeyEditor::resized()
     view->setTransform (juce::AffineTransform::scale (s)); view->setBounds (0, 0, kW, kH);
     if (ready && getWidth() >= kW / 2) proc.setUiInt ("uiW", getWidth());
 }
-bool SynthKeyEditor::isInterestedInFileDrag (const juce::StringArray& files) { for (auto& f : files) if (f.endsWithIgnoreCase (".bfpack")) return true; return false; }
-void SynthKeyEditor::filesDropped (const juce::StringArray& files, int, int) { view->installFiles (files); }
+bool SynthKeyEditor::isInterestedInFileDrag (const juce::StringArray& files) { for (auto& f : files) if (f.endsWithIgnoreCase (".bfpack") || useraudio::isAudioFile (juce::File (f))) return true; return false; }
+void SynthKeyEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    juce::StringArray packs; juce::File audio;
+    for (auto& f : files) { if (f.endsWithIgnoreCase (".bfpack")) packs.add (f); else if (audio == juce::File() && useraudio::isAudioFile (juce::File (f))) audio = juce::File (f); }
+    if (packs.size()) view->installFiles (packs);
+    if (audio != juce::File()) ui::showDropMenu (proc, this, audio);
+}

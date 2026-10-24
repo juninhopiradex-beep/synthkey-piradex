@@ -3,6 +3,7 @@
 #include "AppPaths.h"
 #include "BinaryData.h"
 #include "Core/NucleoGains.h"
+#include "UserAudio.h"
 
 using namespace sk;
 
@@ -13,6 +14,7 @@ PackHub::PackHub()
     defs = buildPackDefs();
     pool = std::make_unique<juce::ThreadPool> (1);
     rescan();
+    pool->addJob ([this] { reloadUserSamples(); });
 }
 PackHub::~PackHub() { pool->removeAllJobs (true, 8000); }
 
@@ -136,4 +138,56 @@ juce::String PackHub::uninstall (const std::string& id)
     if (! e.file.deleteFile()) return juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel remover o ficheiro (pode estar em /Library: remova-o manualmente).");
     { std::lock_guard<std::mutex> g (mtx); libs.erase (id); }
     rescan(); return {};
+}
+
+// ------------------------------------------------------------------------------------------------
+//  Samples do utilizador
+// ------------------------------------------------------------------------------------------------
+std::shared_ptr<const Library> PackHub::userLibrary() const { std::lock_guard<std::mutex> g (mtx); return userLib; }
+
+std::vector<packio::PackInfo::Inst> PackHub::userInstruments() const
+{
+    std::vector<packio::PackInfo::Inst> v; std::lock_guard<std::mutex> g (mtx);
+    if (userLib) for (auto& i : userLib->inst) v.push_back ({ i.id, i.name, i.fixedPitch ? "Percuss\xC3\xA3o" : "Tonal" });
+    return v;
+}
+
+void PackHub::reloadUserSamples()
+{
+    auto lib = std::make_shared<Library>(); std::map<std::string, UserCacheItem> next;
+    std::map<std::string, UserCacheItem> old; { std::lock_guard<std::mutex> g (mtx); old = userCache; }
+    auto files = skpaths::userSamples().findChildFiles (juce::File::findFiles, false, "*");
+    files.sort();
+    for (auto& f : files)
+    {
+        if (! useraudio::isAudioFile (f)) continue;
+        const auto key = f.getFullPathName().toStdString(); const auto mod = f.getLastModificationTime().toMilliseconds(); const auto size = f.getSize();
+        UserCacheItem item;
+        if (auto it = old.find (key); it != old.end() && it->second.mod == mod && it->second.size == size) item = it->second;
+        else { juce::String err; item.mod = mod; item.size = size; if (! useraudio::makeInstrument (f, item.lib, err)) continue; }
+        // ids únicos
+        for (auto& in : item.lib.inst) { std::string base = in.id; int n = 2; while (lib->indexOf (in.id) >= 0) in.id = base + "_" + std::to_string (n++); }
+        lib->appendShared (item.lib); next[key] = std::move (item);
+    }
+    { std::lock_guard<std::mutex> g (mtx); userLib = lib; userCache = std::move(next); }
+    sendChangeMessage();
+}
+
+juce::String PackHub::importUserSample (const juce::File& src, std::string* newId)
+{
+    if (! useraudio::isAudioFile (src)) return juce::CharPointer_UTF8 ("Escolhe um ficheiro WAV, AIFF ou FLAC.");
+    { sk::Library tmp; juce::String err; if (! useraudio::makeInstrument (src, tmp, err)) return err; }       // valida antes de copiar
+    auto dst = skpaths::userSamples().getChildFile (src.getFileName());
+    if (dst != src) { if (dst.existsAsFile()) dst = dst.getNonexistentSibling(); if (! src.copyFileTo (dst)) return juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel copiar o ficheiro para a pasta de samples."); }
+    reloadUserSamples();
+    if (newId) { *newId = {}; if (auto l = userLibrary()) for (auto& i : l->inst) if (i.zones.size() && i.zones[0].file == dst.getFileName().toStdString()) *newId = i.id; }
+    return {};
+}
+
+juce::String PackHub::removeUserSample (const std::string& instId)
+{
+    std::string fn; if (auto l = userLibrary()) for (auto& i : l->inst) if (i.id == instId && ! i.zones.empty()) fn = i.zones[0].file;
+    if (fn.empty()) return {};
+    if (! skpaths::userSamples().getChildFile (fn).deleteFile()) return juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel apagar o ficheiro.");
+    reloadUserSamples(); return {};
 }

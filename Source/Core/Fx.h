@@ -29,31 +29,32 @@ struct DelayLine
 class FxUnit
 {
 public:
-    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem };
+    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem, DelaySync };
 
     void prepare (float sampleRate, int maxBlock)
     {
         sr = sampleRate;
         dBuf.assign ((size_t) std::max (maxBlock, 64), 0.0f);
-        dl[0].allocate ((int) (sr * 1.7f)); dl[1].allocate ((int) (sr * 1.7f));
+        dl[0].allocate ((int) (sr * 2.4f)); dl[1].allocate ((int) (sr * 2.4f));
+        er[0].allocate ((int) (sr * 0.12f)); er[1].allocate ((int) (sr * 0.12f));
         ch[0].allocate ((int) (sr * 0.08f)); ch[1].allocate ((int) (sr * 0.08f));
         pre[0].allocate ((int) (sr * 0.25f)); pre[1].allocate ((int) (sr * 0.25f));
         const float scale = sr / 44100.0f;
         static const int base[8] = { 1103, 1327, 1531, 1783, 2017, 2243, 2477, 2707 };
         for (int i = 0; i < 8; ++i) { baseLen[i] = (int) ((float) base[i] * scale); rv[i].allocate ((int) ((float) baseLen[i] * 1.7f) + 64); }
-        static const int apl[4] = { 142, 107, 379, 277 };
-        for (int i = 0; i < 4; ++i) { rvAp[i].allocate ((int) ((float) apl[i] * scale) + 4); rvApLen[i] = (int) ((float) apl[i] * scale); }
+        static const int apl[6] = { 142, 107, 379, 277, 89, 233 };
+        for (int i = 0; i < 6; ++i) { rvAp[i].allocate ((int) ((float) apl[i] * scale) + 4); rvApLen[i] = (int) ((float) apl[i] * scale); }
         reset();
     }
     void reset()
     {
-        for (auto& d : dl) d.clear(); for (auto& d : ch) d.clear(); for (auto& d : pre) d.clear();
+        for (auto& d : dl) d.clear(); for (auto& d : er) d.clear(); for (auto& d : ch) d.clear(); for (auto& d : pre) d.clear();
         for (auto& d : rv) d.clear(); for (auto& d : rvAp) d.clear();
         for (auto& v : rvLp) v = 0; for (auto& b : eq) for (auto& x : b) x.reset();
         envC = 0; for (auto& v : lp1) v = 0; for (auto& v : fbLp) v = 0;
         for (auto& a : ap) for (auto& v : a) v = 0; fbPh[0] = fbPh[1] = 0;
         phase = 0; crushHold[0] = crushHold[1] = 0; crushCnt = 0; for (auto& b : wd) b.reset();
-        satLp[0] = satLp[1] = 0; lastType = -1;
+        satLp[0] = satLp[1] = 0; lastType = -1; fbHp[0] = fbHp[1] = 0; dSm[0] = dSm[1] = -1.0f; wowPh = 0; inHp = 0;
     }
 
     void process (int type, const float* p, float mix, float* L, float* R, int n, float bpm)
@@ -69,7 +70,8 @@ public:
             case Comp: doComp (p, L, R, n); break;
             case Sat: doSat (p, L, R, n); break;
             case Chorus: doChorus (p, L, R, n); break;
-            case Delay: doDelay (p, L, R, n, bpm); break;
+            case Delay: doDelay (p, L, R, n, bpm, false); break;
+            case DelaySync: doDelay (p, L, R, n, bpm, true); break;
             case Reverb: doReverb (p, L, R, n); break;
             case Phaser: doPhaser (p, L, R, n); break;
             case Crush: doCrush (p, L, R, n); break;
@@ -170,19 +172,29 @@ private:
         }
     }
 
-    // ---- Delay ---------------------------------------------------------------------
-    DelayLine dl[2]; float fbLp[2] = {};
-    void doDelay (const float* p, float* L, float* R, int n, float)
+    // ---- Delay (livre em ms ou sincronizado ao tempo) -------------------------------------
+    //  Realimentação com filtro passa-baixo + passa-alto e saturação suave (tipo fita), tempo com
+    //  deslize (sem estalidos ao mexer) e uma "oscilação" mínima para dar vida.
+    DelayLine dl[2]; float fbLp[2] = {}, fbHp[2] = {}, dSm[2] = { -1.0f, -1.0f }, wowPh = 0;
+    void doDelay (const float* p, float* L, float* R, int n, float bpm, bool sync)
     {
-        const float tms = mapLog (p[0], 30.0f, 1500.0f), fb = mapLin (p[1], 0.0f, 0.95f), fc = mapLog (p[2], 1000.0f, 16000.0f), pp = p[3], off = 1.0f + 0.5f * p[4];
-        const float dL = std::min (tms * 0.001f * sr, (float) dl[0].size - 4.0f), dR = std::min (tms * off * 0.001f * sr, (float) dl[0].size - 4.0f);
-        const float a = 1.0f - std::exp (-kTwoPi * fc / sr);
+        static const float beats[8] = { 2.0f, 1.5f, 1.0f, 0.75f, 0.5f, 1.0f / 3.0f, 0.25f, 1.0f / 6.0f };   // 1/2, 1/4., 1/4, 1/8., 1/8, 1/8T, 1/16, 1/16T
+        const float tms = sync ? beats[(int) std::lround (clampf (p[0], 0.0f, 1.0f) * 7.0f)] * 60000.0f / std::max (20.0f, bpm) : mapLog (p[0], 30.0f, 1500.0f);
+        const float fb = mapLin (p[1], 0.0f, 0.95f), fc = mapLog (p[2], 1000.0f, 16000.0f), pp = p[3], off = sync ? (1.0f + 0.5f * p[4] * 0.0f) : 1.0f + 0.5f * p[4];
+        const float maxD = (float) dl[0].size - 6.0f;
+        const float tL = std::min (tms * 0.001f * sr, maxD), tR = std::min (tms * (sync && p[4] > 0.5f ? 1.5f : off) * 0.001f * sr, maxD);
+        if (dSm[0] < 0) { dSm[0] = tL; dSm[1] = tR; }
+        const float a = 1.0f - std::exp (-kTwoPi * fc / sr), hpA = 1.0f - std::exp (-kTwoPi * 120.0f / sr), sm = 1.0f - std::exp (-1.0f / (0.06f * sr));
+        const float wowDepth = 0.0004f * sr, wowInc = 0.35f / sr;
         for (int i = 0; i < n; ++i)
         {
-            const float yL = dl[0].read (dL), yR = dl[1].read (dR);
+            dSm[0] += (tL - dSm[0]) * sm; dSm[1] += (tR - dSm[1]) * sm;
+            wowPh += wowInc; if (wowPh >= 1.0f) wowPh -= 1.0f;
+            const float w = wowDepth * std::sin (kTwoPi * wowPh);
+            const float yL = dl[0].read (std::max (2.0f, dSm[0] + w)), yR = dl[1].read (std::max (2.0f, dSm[1] - w));
             fbLp[0] += a * (yL - fbLp[0]); fbLp[1] += a * (yR - fbLp[1]);
-            const float fL = fbLp[0], fR = fbLp[1];
-            // ping-pong: cruza as realimentações
+            fbHp[0] += hpA * (fbLp[0] - fbHp[0]); fbHp[1] += hpA * (fbLp[1] - fbHp[1]);
+            const float fL = fastTanh ((fbLp[0] - fbHp[0]) * 1.3f) * 0.77f, fR = fastTanh ((fbLp[1] - fbHp[1]) * 1.3f) * 0.77f;
             const float inL = L[i], inR = R[i];
             dl[0].write (flushDenorm (inL + (fL * (1 - pp) + fR * pp) * fb));
             dl[1].write (flushDenorm (inR + (fR * (1 - pp) + fL * pp) * fb));
@@ -191,7 +203,8 @@ private:
     }
 
     // ---- Reverb (FDN de 8 linhas, matriz de Hadamard) -------------------------------
-    DelayLine rv[8], rvAp[4], pre[2]; int baseLen[8] = {}, rvApLen[4] = {}; float rvLp[8] = {}; float lfoPh = 0;
+    DelayLine rv[8], rvAp[6], pre[2], er[2]; int baseLen[8] = {}, rvApLen[6] = {}; float inHp = 0; float rvLp[8] = {}; float lfoPh = 0;
+    static constexpr float erL[6] = { 7.0f, 13.0f, 19.0f, 29.0f, 41.0f, 53.0f }, erR[6] = { 5.0f, 11.0f, 23.0f, 31.0f, 37.0f, 47.0f }, erG[6] = { 0.6f, 0.5f, 0.45f, 0.35f, 0.3f, 0.2f };
     void doReverb (const float* p, float* L, float* R, int n)
     {
         const float size = mapLin (p[0], 0.4f, 1.5f), rt60 = mapLog (p[1], 0.3f, 14.0f), damp = p[2], pd = mapLin (p[3], 0.0f, 0.2f) * sr, wide = p[4];
@@ -206,7 +219,9 @@ private:
         {
             pre[0].write (L[i]); pre[1].write (R[i]);
             float in = 0.5f * (pre[0].read (std::max (pd, 1.0f)) + pre[1].read (std::max (pd, 1.0f)));
-            for (int k = 0; k < 4; ++k)   // difusão de entrada (all-pass)
+            inHp += 0.012f * (in - inHp); in -= inHp;                 // tira a lama abaixo de ~80 Hz
+            er[0].write (in); er[1].write (in);
+            for (int k = 0; k < 6; ++k)   // difusão de entrada (all-pass)
             {
                 const float d = rvAp[k].read ((float) rvApLen[k]);
                 const float v = in + 0.6f * d; rvAp[k].write (v); in = d - 0.6f * v;
@@ -233,7 +248,10 @@ private:
             }
             oL *= 0.35f; oR *= 0.35f;
             const float m = 0.5f * (oL + oR), s2 = 0.5f * (oL - oR) * (0.4f + 0.6f * wide);
-            L[i] = m + s2; R[i] = m - s2;
+            // reflexões iniciais (6 + 6 ecos curtos, espalhados entre L e R)
+            float eL = 0, eR = 0;
+            for (int k = 0; k < 6; ++k) { eL += er[0].read (erL[k] * size * sr * 0.001f) * erG[k]; eR += er[1].read (erR[k] * size * sr * 0.001f) * erG[k]; }
+            L[i] = m + s2 + eL * 0.22f; R[i] = m - s2 + eR * 0.22f;
         }
     }
 

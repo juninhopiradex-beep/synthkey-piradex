@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "UserAudio.h"
 #include "PluginEditor.h"
 #include <random>
 
@@ -83,6 +84,7 @@ void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     grooveEvs.reserve (1024); groove.stop();
     sr = sampleRate; engineMax = std::max (512, samplesPerBlock);
+    engine->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0);
     engine->prepare (sampleRate, engineMax); midiFx.prepare ((float) sampleRate);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
     { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); }
@@ -104,6 +106,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     for (int i = 0; i < P_COUNT; ++i) prm[i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;
     prm[P_A_SMP] = (float) smpIdx[0].load(); prm[P_B_SMP] = (float) smpIdx[1].load();
 
+    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
     if (auto* pl = pendingLib.exchange (nullptr)) { engine->setLibrary (pl); engineLib.store (pl); midiFx.allNotesOff(); }
 
     double bpm = 120.0, ppq = 0.0; bool playing = false;
@@ -123,20 +126,31 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // ---- MIDI de entrada -> MidiFx (escala / acordes / arpejador)
     float pitchBend = 0, aftertouch = 0; bool gotPb = false, gotAt = false;
+    const bool mpe = prm[P_MPE_ON] > 0.5f; int releasedNotes[32]; int nReleased = 0;
     for (const auto meta : midi)
     {
         const auto m = meta.getMessage(); const int pos = juce::jlimit (0, n - 1, meta.samplePosition);
-        if (m.isNoteOn()) midiFx.noteOn (m.getNoteNumber(), m.getFloatVelocity(), pos);
-        else if (m.isNoteOff()) midiFx.noteOff (m.getNoteNumber(), pos);
+        const int ch = m.getChannel(); const bool memberCh = mpe && ch >= 2;        // MPE: canal 1 = mestre, 2-16 = uma nota por canal
+        if (m.isNoteOn()) { midiFx.noteOn (m.getNoteNumber(), m.getFloatVelocity(), pos); if (memberCh) chanNote[ch] = m.getNoteNumber(); }
+        else if (m.isNoteOff()) { midiFx.noteOff (m.getNoteNumber(), pos); if (memberCh && chanNote[ch] == m.getNoteNumber()) chanNote[ch] = -1; if (nReleased < 32) releasedNotes[nReleased++] = m.getNoteNumber(); }
         else if (m.isAllNotesOff() || m.isAllSoundOff()) midiFx.allNotesOff();
         else if (m.isController())
         {
-            if (m.getControllerNumber() == 1) modWheel = (float) m.getControllerValue() / 127.0f;
+            if (memberCh && m.getControllerNumber() == 74) { if (chanNote[ch] >= 0) engine->setNoteSlide (chanNote[ch], (float) m.getControllerValue() / 127.0f); }
+            else if (m.getControllerNumber() == 1) modWheel = (float) m.getControllerValue() / 127.0f;
             else if (m.getControllerNumber() == 64) sustainPedal = m.getControllerValue() >= 64 ? 1.0f : 0.0f;
         }
-        else if (m.isPitchWheel()) { pitchBend = (float) (m.getPitchWheelValue() - 8192) / 8192.0f; gotPb = true; }
-        else if (m.isChannelPressure()) { aftertouch = (float) m.getChannelPressureValue() / 127.0f; gotAt = true; }
-        else if (m.isAftertouch()) { aftertouch = (float) m.getAfterTouchValue() / 127.0f; gotAt = true; }
+        else if (m.isPitchWheel())
+        {
+            const float pbv = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
+            if (memberCh) { if (chanNote[ch] >= 0) engine->setNoteBend (chanNote[ch], pbv); } else { pitchBend = pbv; gotPb = true; }
+        }
+        else if (m.isChannelPressure())
+        {
+            const float pv = (float) m.getChannelPressureValue() / 127.0f;
+            if (memberCh) { if (chanNote[ch] >= 0) engine->setNotePressure (chanNote[ch], pv); } else { aftertouch = pv; gotAt = true; }
+        }
+        else if (m.isAftertouch()) { engine->setNotePressure (m.getNoteNumber(), (float) m.getAfterTouchValue() / 127.0f); }   // aftertouch polifónico
     }
     midi.clear();
     if (gotPb) engine->setPitchBend (pitchBend);
@@ -158,6 +172,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         if (e.on) engine->noteOn (e.note, e.vel); else engine->noteOff (e.note);
     }
     renderTo (n);
+    for (int i = 0; i < nReleased; ++i) { engine->setNotePressure (releasedNotes[i], 0.0f); engine->setNoteSlide (releasedNotes[i], 0.0f); if (mpe) engine->setNoteBend (releasedNotes[i], 0.0f); }
     if (buffer.getNumChannels() > 1) { /* R já escrito */ } else { /* mono: L contém o canal esquerdo */ }
 
     // ---- pré-visualização de packs bloqueados: 15 s de áudio acumulado, depois silêncio
@@ -199,6 +214,7 @@ void SynthKeyProcessor::rebuildLibrary()
     auto& hub = PackHub::get();
     auto lib = std::make_shared<Library>();
     for (auto& e : hub.entries()) if (auto l = hub.library (e.id)) lib->appendShared (*l);
+    if (auto ul = hub.userLibrary()) lib->appendShared (*ul);          // samples importados pelo utilizador
     {
         const juce::ScopedLock sl (libLock);
         retired.push_back (combined); combined = lib;
@@ -266,6 +282,8 @@ juce::String SynthKeyProcessor::sampleDisplayName (int e) const
     const auto id = getSampleId (e).toStdString(); if (id.empty()) return juce::CharPointer_UTF8 ("\xE2\x80\x94");
     PackEntry pe; if (PackHub::get().entry (PackHub::packOfInstrument (id), pe))
         for (auto& i : pe.insts) if (i.id == id) return U (i.name.c_str());
+    if (PackHub::packOfInstrument (id) == "user")
+        for (auto& i : PackHub::get().userInstruments()) if (i.id == id) return U (i.name.c_str());
     return juce::String (id);
 }
 
@@ -283,7 +301,57 @@ void SynthKeyProcessor::updatePreviewState()
     previewMode.store (locked);
 }
 
-void SynthKeyProcessor::timerCallback() { AccessManager::get().checkExpiry(); updatePreviewState(); }
+// ------------------------------------------------------------------------------------------------
+//  Desfazer / refazer
+// ------------------------------------------------------------------------------------------------
+SynthKeyProcessor::Snapshot SynthKeyProcessor::takeSnapshot() const
+{
+    Snapshot s; s.v.resize ((size_t) P_COUNT);
+    for (int i = 0; i < P_COUNT; ++i) s.v[(size_t) i] = (i == P_A_SMP || i == P_B_SMP) ? 0.0f : getReal (i);
+    s.a = getSampleId (0); s.b = getSampleId (1); return s;
+}
+bool SynthKeyProcessor::sameSnapshot (const Snapshot& x, const Snapshot& y)
+{
+    if (x.a != y.a || x.b != y.b || x.v.size() != y.v.size()) return false;
+    for (size_t i = 0; i < x.v.size(); ++i) if (std::fabs (x.v[i] - y.v[i]) > 1.0e-5f) return false;
+    return true;
+}
+void SynthKeyProcessor::applySnapshot (const Snapshot& s)
+{
+    for (int i = 0; i < P_COUNT; ++i) if (i != P_A_SMP && i != P_B_SMP && std::fabs (getReal (i) - s.v[(size_t) i]) > 1.0e-5f) setReal (i, s.v[(size_t) i]);
+    if (getSampleId (0) != s.a) setSampleId (0, s.a);
+    if (getSampleId (1) != s.b) setSampleId (1, s.b);
+}
+void SynthKeyProcessor::undoWatch()
+{
+    if (! haveCommitted) { committed = takeSnapshot(); haveCommitted = true; return; }
+    const auto cur = takeSnapshot();
+    if (sameSnapshot (cur, committed)) { quietTicks = 0; return; }
+    if (juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown()) { quietTicks = 0; return; }     // gesto em curso: espera que acabe
+    if (++quietTicks < 7) return;
+    undoStack.push_back (std::move (committed)); redoStack.clear(); committed = cur; quietTicks = 0;
+    if (undoStack.size() > 100) undoStack.erase (undoStack.begin());
+}
+bool SynthKeyProcessor::undo()
+{
+    if (! haveCommitted) return false;
+    { const auto cur = takeSnapshot(); if (! sameSnapshot (cur, committed)) { undoStack.push_back (committed); committed = cur; redoStack.clear(); } }   // fecha uma alteração ainda pendente
+    if (undoStack.empty()) return false;
+    redoStack.push_back (takeSnapshot()); const auto target = std::move (undoStack.back()); undoStack.pop_back();
+    applySnapshot (target); committed = target; quietTicks = 0; return true;
+}
+bool SynthKeyProcessor::redo()
+{
+    if (redoStack.empty()) return false;
+    undoStack.push_back (takeSnapshot()); const auto target = std::move (redoStack.back()); redoStack.pop_back();
+    applySnapshot (target); committed = target; quietTicks = 0; return true;
+}
+
+void SynthKeyProcessor::timerCallback()
+{
+    AccessManager::get().checkExpiry(); updatePreviewState();
+    if (engine && engine->latencySamples() != getLatencySamples()) setLatencySamples (engine->latencySamples());   // muda com a qualidade
+}
 
 // ------------------------------------------------------------------------------------------------
 //  Presets
@@ -337,12 +405,13 @@ Preset SynthKeyProcessor::capturePreset (const juce::String& name) const
     return p;
 }
 
-bool SynthKeyProcessor::saveUserPreset (const juce::String& name, juce::String& error)
+bool SynthKeyProcessor::saveUserPreset (const juce::String& name, juce::String& error, const juce::StringArray& tags)
 {
     juce::String clean = name.trim().retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_()");
     if (clean.isEmpty()) { error = juce::CharPointer_UTF8 ("Escolha um nome v\xC3\xA1lido (letras, n\xC3\xBAmeros, espa\xC3\xA7os)."); return false; }
     const auto f = PackHub::userPresetFolder().getChildFile (clean + ".skpreset");
-    if (! f.replaceWithText (juce::String (presetToJson (capturePreset (clean))))) { error = juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel gravar o preset."); return false; }
+    auto pr = capturePreset (clean); for (auto& t : tags) { const auto tt = t.trim().retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_"); if (tt.isNotEmpty() && pr.tags.size() < 8) pr.tags.push_back (tt.toStdString()); }
+    if (! f.replaceWithText (juce::String (presetToJson (pr)))) { error = juce::CharPointer_UTF8 ("N\xC3\xA3o foi poss\xC3\xADvel gravar o preset."); return false; }
     presetName = clean; apvts.state.setProperty ("presetName", presetName, nullptr);
     refreshPresetList(); return true;
 }
@@ -379,7 +448,33 @@ void SynthKeyProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     auto st = apvts.copyState();
     st.setProperty ("sampleA", getSampleId (0), nullptr); st.setProperty ("sampleB", getSampleId (1), nullptr); st.setProperty ("presetName", presetName, nullptr);
+    st.setProperty ("userWT", encodeUserWavetable(), nullptr);
     if (auto xml = st.createXml()) copyXmlToBinary (*xml, dest);
+}
+
+// tabela do utilizador guardada dentro do projeto (kFrames × kSize amostras em int16 → base64)
+juce::String SynthKeyProcessor::encodeUserWavetable() const
+{
+    const auto fr = engine->userWavetable().frames(); if (fr.empty()) return {};
+    juce::MemoryBlock mb (fr.size() * 2);
+    for (size_t i = 0; i < fr.size(); ++i) { const auto v = (juce::int16) std::lround (juce::jlimit (-1.0f, 1.0f, fr[i]) * 32767.0f); mb.copyFrom (&v, i * 2, 2); }
+    return juce::Base64::toBase64 (mb.getData(), mb.getSize());
+}
+bool SynthKeyProcessor::decodeUserWavetable (const juce::String& b64)
+{
+    if (b64.isEmpty()) { engine->userWavetable().clear(); return false; }
+    juce::MemoryOutputStream out; if (! juce::Base64::convertFromBase64 (out, b64)) return false;
+    const size_t n = out.getDataSize() / 2; std::vector<float> fr (n); const auto* d = (const juce::int16*) out.getData();
+    for (size_t i = 0; i < n; ++i) fr[i] = (float) d[i] / 32767.0f;
+    return engine->userWavetable().setFrames (fr);
+}
+juce::String SynthKeyProcessor::importWavetable (const juce::File& f)
+{
+    sk::SampleData sd; const auto err = useraudio::decode (f, sd); if (err.isNotEmpty()) return err;
+    const auto mono = useraudio::toMono (sd);
+    if (! engine->userWavetable().setSignal (mono.data(), (int) mono.size())) return juce::CharPointer_UTF8 ("Ficheiro demasiado curto para uma wavetable.");
+    userWtName = f.getFileNameWithoutExtension(); apvts.state.setProperty ("userWTName", userWtName, nullptr);
+    return {};
 }
 
 void SynthKeyProcessor::setStateInformation (const void* data, int size)
@@ -390,6 +485,7 @@ void SynthKeyProcessor::setStateInformation (const void* data, int size)
             auto vt = juce::ValueTree::fromXml (*xml);
             apvts.replaceState (vt);
             presetName = vt.getProperty ("presetName", "Init").toString();
+            decodeUserWavetable (vt.getProperty ("userWT", "").toString()); userWtName = vt.getProperty ("userWTName", "").toString();
             setSampleId (0, vt.getProperty ("sampleA", "").toString()); setSampleId (1, vt.getProperty ("sampleB", "").toString());
             refreshPresetList();
             if (onPresetLoaded) onPresetLoaded();

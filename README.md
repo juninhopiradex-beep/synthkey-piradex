@@ -15,8 +15,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.1.1-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.1.1-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.2.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.2.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.1.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
@@ -70,3 +70,13 @@ a ativação online está prevista para a v1.1.
 ## v1.1.1
 
 * **Arpejador:** o padrão de 16 passos agora é editável — arrasta as barras (em baixo = pausa), clica no número para mudar a oitava, botão direito para repetir a nota ×2/×3, e escolhe quantos passos (1–16).
+
+## v1.2.0
+
+* **Motor:** qualidade Normal / Alta (2x) / Máxima (4x) com sobre-amostragem (menos aliasing); filtro **Formante** (vogais); reverb e delay mais suaves; **Delay sincronizado** ao tempo do anfitrião.
+* **Importar WAV:** botão WAV no oscilador cria uma wavetable a partir de qualquer ficheiro; arrasta áudio para a janela para o usar como **instrumento próprio** (pack "Utilizador", nunca bloqueado). A wavetable do utilizador fica guardada no projecto do DAW, não dentro dos presets.
+* **Separador MODULAD.:** sequenciador de passos, LFO desenhado à mão, envelope multi-ponto; **MPE** e **aftertouch por nota**; novas origens na MATRIZ (STEP, DESENHO, ENV MULTI, PRESSÃO, SLIDE).
+* **Arrastar para modular:** pega numa origem da faixa por baixo do teclado e larga-a em qualquer botão.
+* **Anular / Refazer** (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) e presets guardados com **etiquetas** (`Nome #etiqueta, outra`).
+* **✦ DESCREVER:** escreve o som em palavras ("baixo escuro e agressivo", "pad quente e largo", "808 drill") e o SYNTHKEY monta um preset (regras internas, sem internet), com volume calibrado. Ecrã de **ajuda** na primeira abertura.
+* Correção: a origem de modulação aceita agora todas as fontes (as 5 novas não se podiam escolher).

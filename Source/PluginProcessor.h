@@ -52,6 +52,10 @@ public:
     bool sampleMissing (int engine) const { return missing[(size_t) engine].load(); }
     juce::String sampleDisplayName (int engine) const;
     std::shared_ptr<const sk::Library> currentLibrary() const;
+    // wavetable importada de um WAV (por instância; vai dentro do projeto)
+    juce::String importWavetable (const juce::File& f);
+    sk::UserWavetable& userWavetable() { return engine->userWavetable(); }
+    juce::String userWavetableName() const { return userWtName; }
 
     // ---- presets ----
     void refreshPresetList();
@@ -62,7 +66,12 @@ public:
     void loadPresetIndex (int i);
     void stepPreset (int dir);
     void initPreset();
-    bool saveUserPreset (const juce::String& name, juce::String& error);
+    bool saveUserPreset (const juce::String& name, juce::String& error, const juce::StringArray& tags = {});
+    // histórico (desfazer / refazer): guarda um instantâneo de todos os parâmetros quando um gesto termina
+    void undoWatch();                       // chamar ~30x/s na thread de mensagens
+    bool undo(); bool redo();
+    bool canUndo() const { return ! undoStack.empty(); }
+    bool canRedo() const { return ! redoStack.empty(); }
     sk::Preset capturePreset (const juce::String& name) const;
     bool presetIsLocked (const sk::Preset& p) const;      // usa instrumentos de um pack bloqueado?
     void randomizePatch (float amount);
@@ -89,6 +98,11 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void rebuildLibrary();
+    struct Snapshot { std::vector<float> v; juce::String a, b; };
+    Snapshot takeSnapshot() const; void applySnapshot (const Snapshot& s); static bool sameSnapshot (const Snapshot& x, const Snapshot& y);
+    std::vector<Snapshot> undoStack, redoStack; Snapshot committed; bool haveCommitted = false; int quietTicks = 0;
+    int chanNote[17] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };      // MPE: nota ativa de cada canal
+    juce::String encodeUserWavetable() const; bool decodeUserWavetable (const juce::String& b64); juce::String userWtName;
     void resolveSamples();
     void updatePreviewState();
     static std::string fallbackFor (const std::string& id);

@@ -8,7 +8,7 @@ endif()
 # Windows: runtime do Visual C++ embutido (não precisa do "VC++ Redistributable")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(SYNTHKEY VERSION 1.1.1 LANGUAGES C CXX)
+project(SYNTHKEY VERSION 1.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -93,7 +93,7 @@ endif()
 # ---- testes e ferramentas do núcleo (C++ puro, sem JUCE) -----------------------------------
 option(SK_BUILD_TOOLS "Compilar testes e packgen" OFF)
 if(SK_BUILD_TOOLS)
-    foreach(t test_core test_packio test_presets)
+    foreach(t test_core test_packio test_presets test_soundgen)
         add_executable(${t} tests/${t}.cpp)
         target_include_directories(${t} PRIVATE Source)
     endforeach()

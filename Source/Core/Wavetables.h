@@ -8,6 +8,7 @@
 // =============================================================================
 #pragma once
 #include "Dsp.h"
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -21,6 +22,8 @@ public:
     static constexpr int kSize   = 1024;           // amostras por ciclo
     static constexpr int kMips   = 8;
     static constexpr int kMaxHarm = kSize / 2;     // 512 harmónicas no mip 0
+    static constexpr int kStride = kSize + 4;
+    static constexpr int kUserTable = kTables;     // índice da tabela do utilizador (importada de um WAV)
 
     static const Wavetables& get()
     {
@@ -60,8 +63,54 @@ public:
         f1 = f0 + 1; fr = x - (float) f0;
     }
 
+    // ---- tabela do utilizador -----------------------------------------------------
+    // Converte um sinal mono (qualquer comprimento) em kFrames ciclos de kSize amostras.
+    // Aceita: tabelas "Serum" (n múltiplo de 2048/1024/512/256 = vários ciclos), um ciclo único, ou
+    // um som qualquer (é fatiado em kFrames pedaços, cada pedaço tratado como um ciclo).
+    static bool framesFromSignal (const float* x, int n, std::vector<float>& frames)
+    {
+        if (n < 32) return false;
+        int cyc = 0;
+        for (int c : { 2048, 1024, 512, 256 }) if (n % c == 0) { cyc = c; break; }
+        if (cyc == 0) cyc = (n <= 8192) ? n : std::max (64, n / kFrames);
+        const int count = std::max (1, n / cyc);
+        frames.assign ((size_t) kFrames * kSize, 0.0f);
+        auto sampleOf = [&] (int fi, float ph)            // ciclo fi da fonte, fase 0..1, interpolado com wrap
+        {
+            const float pos = ph * (float) cyc; const int i0 = (int) pos; const float fr = pos - (float) i0;
+            const int a = fi * cyc + (i0 % cyc), b = fi * cyc + ((i0 + 1) % cyc);
+            return x[a] + (x[b] - x[a]) * fr;
+        };
+        for (int f = 0; f < kFrames; ++f)
+        {
+            const float fpos = count > 1 ? (float) f * (float) (count - 1) / (float) (kFrames - 1) : 0.0f;
+            const int f0 = std::min (count - 1, (int) fpos), f1 = std::min (count - 1, f0 + 1); const float t = fpos - (float) f0;
+            float* out = frames.data() + (size_t) f * kSize; double dc = 0;
+            for (int i = 0; i < kSize; ++i)
+            {
+                const float ph = (float) i / (float) kSize;
+                out[i] = sampleOf (f0, ph) * (1.0f - t) + sampleOf (f1, ph) * t;
+                dc += out[i];
+            }
+            const float m = (float) (dc / kSize); for (int i = 0; i < kSize; ++i) out[i] -= m;
+        }
+        return true;
+    }
+    // kFrames ciclos no tempo → mips band-limited (dst: kFrames*kMips*kStride)
+    static void buildFromFrames (const std::vector<float>& frames, std::vector<float>& dst)
+    {
+        dst.assign ((size_t) kFrames * kMips * kStride, 0.0f);
+        std::vector<Cpx> buf ((size_t) kSize), a ((size_t) kSize); Spec spec;
+        for (int f = 0; f < kFrames; ++f)
+        {
+            for (int i = 0; i < kSize; ++i) a[(size_t) i] = { frames[(size_t) f * kSize + (size_t) i], 0.0f };
+            fft (a, false); clear (spec);
+            for (int h = 1; h < kMaxHarm; ++h) spec[(size_t) h] = { 2.0f * a[(size_t) h].re / (float) kSize, 2.0f * a[(size_t) h].im / (float) kSize };
+            buildMips (spec, dst.data() + ((size_t) f * kMips) * kStride, true, buf);
+        }
+    }
+
 private:
-    static constexpr int kStride = kSize + 4;
     using Spec = std::array<Cpx, kMaxHarm + 1>;   // H[h]: x(φ) = Σ Re(H[h]·e^{j2πhφ})
     std::vector<float> data, extra;
 
@@ -268,7 +317,7 @@ private:
         s[0] = { 0, 0 };
     }
 
-    void buildMips (const Spec& spec, float* dstBase, bool normalizeTo09, std::vector<Cpx>& buf)
+    static void buildMips (const Spec& spec, float* dstBase, bool normalizeTo09, std::vector<Cpx>& buf)
     {
         float scale = 1.0f;
         for (int mip = 0; mip < kMips; ++mip)
@@ -313,5 +362,31 @@ private:
                 buildMips (spec, data.data() + (((size_t) tb * kFrames + (size_t) fr) * kMips) * kStride, true, buf);
             }
     }
+};
+
+// Tabela do utilizador de UMA instância do plugin (3 buffers em rotação: a thread de áudio nunca lê um buffer em escrita)
+class UserWavetable
+{
+public:
+    UserWavetable() { for (auto& b : buf) b.assign ((size_t) Wavetables::kFrames * Wavetables::kMips * Wavetables::kStride, 0.0f); }
+    bool loaded() const { return act.load (std::memory_order_acquire) >= 0; }
+    const float* cycle (int frame, int mip) const
+    {
+        const int a = act.load (std::memory_order_acquire); if (a < 0) return nullptr;
+        return buf[(size_t) a].data() + (((size_t) frame * Wavetables::kMips + (size_t) mip) * Wavetables::kStride);
+    }
+    bool setFrames (const std::vector<float>& frames)            // chamar fora da thread de áudio
+    {
+        if ((int) frames.size() != Wavetables::kFrames * Wavetables::kSize) return false;
+        std::lock_guard<std::mutex> g (m);
+        const int next = (std::max (act.load(), -1) + 1) % 3;
+        Wavetables::buildFromFrames (frames, buf[(size_t) next]);
+        keep = frames; act.store (next, std::memory_order_release); return true;
+    }
+    bool setSignal (const float* x, int n) { std::vector<float> f; return Wavetables::framesFromSignal (x, n, f) && setFrames (f); }
+    std::vector<float> frames() const { std::lock_guard<std::mutex> g (m); return keep; }
+    void clear() { std::lock_guard<std::mutex> g (m); keep.clear(); act.store (-1, std::memory_order_release); }
+private:
+    std::vector<float> buf[3]; std::atomic<int> act { -1 }; std::vector<float> keep; mutable std::mutex m;
 };
 } // namespace sk

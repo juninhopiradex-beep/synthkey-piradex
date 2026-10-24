@@ -29,12 +29,14 @@ enum ModSrc : int
 {
     MS_NONE = 0, MS_LFO1, MS_LFO2, MS_ENV2, MS_ENV3, MS_VEL, MS_KEY, MS_MODWHEEL, MS_AFTERTOUCH,
     MS_PITCHBEND, MS_RANDOM, MS_MACRO1, MS_MACRO2, MS_MACRO3, MS_MACRO4, MS_MACRO5, MS_MACRO6,
-    MS_MACRO7, MS_MACRO8, MS_ENVAMP, MS_CONST, MS_COUNT
+    MS_MACRO7, MS_MACRO8, MS_ENVAMP, MS_CONST,
+    MS_STEP, MS_DRAW, MS_MENV, MS_PRESSURE, MS_SLIDE, MS_COUNT
 };
 inline const char* const kModSrcNames[MS_COUNT] = {
     "Nenhuma", "LFO 1", "LFO 2", "Env 2", "Env 3", "Velocidade", "Tecla", "Mod Wheel", "Aftertouch",
     "Pitch Bend", "Aleatório", "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Macro 5", "Macro 6",
-    "Macro 7", "Macro 8", "Env Amp", "Constante" };
+    "Macro 7", "Macro 8", "Env Amp", "Constante",
+    "Step Seq", "LFO Desenhado", "Env Multi-ponto", "Pressão (por nota)", "Slide (MPE)" };
 
 enum ModDst : int
 {
@@ -62,9 +64,9 @@ inline const float kDivBeats[] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.5f, 1.f, 2.
 inline constexpr int kNumDivs = 16;
 
 #define SK_DIVLIST "4/1|2/1|1/1|1/2|1/2T|1/4.|1/4|1/4T|1/8.|1/8|1/8T|1/16.|1/16|1/16T|1/32|1/32T"
-#define SK_WTNAMES "Básica|Harmónicos|Órgão|Vogais|Coro de Vidro|Sinos Digitais|FM Digital|PWM|Dobra|Pente|Pads Etéreos|Digital Duro|Sub Baixo|Piano Elétrico|Kalimba|Textura"
-#define SK_FILTERTYPES "Desligado|Passa-baixo 12|Passa-baixo 24|Passa-alto 12|Passa-alto 24|Passa-banda|Notch|Ladder|Pente"
-#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo"
+#define SK_WTNAMES "Básica|Harmónicos|Órgão|Vogais|Coro de Vidro|Sinos Digitais|FM Digital|PWM|Dobra|Pente|Pads Etéreos|Digital Duro|Sub Baixo|Piano Elétrico|Kalimba|Textura|Utilizador (WAV)"
+#define SK_FILTERTYPES "Desligado|Passa-baixo 12|Passa-baixo 24|Passa-alto 12|Passa-alto 24|Passa-banda|Notch|Ladder|Pente|Formante"
+#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo|Delay Tempo"
 #define SK_CHORDS "Desligado|Oitava|Quinta|Maior|Menor|Maj7|Min7|Dom7|Maj9|Min9|Sus2|Sus4|Diatónico 3|Diatónico 7|Diatónico 9"
 #define SK_SCALES "Desligada|Maior|Menor natural|Dórico|Frígio|Lídio|Mixolídio|Menor harmónica|Pentatónica maior|Pentatónica menor|Blues"
 #define SK_KEYS "Dó|Dó#|Ré|Ré#|Mi|Fá|Fá#|Sol|Sol#|Lá|Lá#|Si"
@@ -88,7 +90,7 @@ inline constexpr int kNumDivs = 16;
     X(E##_SYNC,   id "_sync",   "Motor " NM " Sync",             PK_FLOAT,  0, 48, 0, "st", "") \
     X(E##_FMAMT,  id "_fmamt",  "Motor " NM " FM",               PK_FLOAT,  0, 1, 0, "%", "") \
     X(E##_FMRAT,  id "_fmrat",  "Motor " NM " Razão FM",         PK_CHOICE, 0, 7, 2, "", "0.5|1|2|3|4|5|6|8") \
-    X(E##_WTTAB,  id "_wttab",  "Motor " NM " Tabela",           PK_CHOICE, 0, 15, 0, "", SK_WTNAMES) \
+    X(E##_WTTAB,  id "_wttab",  "Motor " NM " Tabela",           PK_CHOICE, 0, 16, 0, "", SK_WTNAMES) \
     X(E##_WTPOS,  id "_wtpos",  "Motor " NM " Posição",          PK_FLOAT,  0, 1, 0, "%", "") \
     X(E##_WARP,   id "_warp",   "Motor " NM " Warp",             PK_FLOAT,  -1, 1, 0, "", "") \
     X(E##_FOLD,   id "_fold",   "Motor " NM " Dobra",            PK_FLOAT,  0, 1, 0, "%", "") \
@@ -100,7 +102,7 @@ inline constexpr int kNumDivs = 16;
     X(E##_SMP,    id "_smp",    "Motor " NM " Instrumento",      PK_INT,    0, 4095, 0, "", "")
 
 #define SK_FILTER(X, E, id, NM, typeDef, cutDef) \
-    X(E##_TYPE,  id "_type",  "Filtro " NM " Tipo",       PK_CHOICE, 0, 8, typeDef, "", SK_FILTERTYPES) \
+    X(E##_TYPE,  id "_type",  "Filtro " NM " Tipo",       PK_CHOICE, 0, 9, typeDef, "", SK_FILTERTYPES) \
     X(E##_CUT,   id "_cut",   "Filtro " NM " Corte",      PK_LOG,    20, 20000, cutDef, "Hz", "") \
     X(E##_RES,   id "_res",   "Filtro " NM " Ressonância", PK_FLOAT, 0, 1, 0.1f, "%", "") \
     X(E##_DRIVE, id "_drive", "Filtro " NM " Drive",      PK_FLOAT,  0, 1, 0, "%", "") \
@@ -123,7 +125,7 @@ inline constexpr int kNumDivs = 16;
     X(E##_KEY,   id "_key",   NM " Reiniciar na tecla", PK_BOOL, 0, 1, 1, "", "")
 
 #define SK_MOD(X, n) \
-    X(MOD##n##_SRC, "mod" #n "_src", "Mod " #n " Origem",  PK_CHOICE, 0, 20, 0, "", "@MODSRC") \
+    X(MOD##n##_SRC, "mod" #n "_src", "Mod " #n " Origem",  PK_CHOICE, 0, MS_COUNT - 1, 0, "", "@MODSRC") \
     X(MOD##n##_DST, "mod" #n "_dst", "Mod " #n " Destino", PK_CHOICE, 0, 35, 0, "", "@MODDST") \
     X(MOD##n##_AMT, "mod" #n "_amt", "Mod " #n " Quantidade", PK_FLOAT, -1, 1, 0, "%", "")
 
@@ -132,8 +134,14 @@ inline constexpr int kNumDivs = 16;
     X(ARP_O##n, "arp_o" #n, "Arp Passo " #n " Oitava",    PK_INT,  -1, 1, 0, "", "") \
     X(ARP_R##n, "arp_r" #n, "Arp Passo " #n " Repetições", PK_INT,   0, 2, 0, "", "")
 
+#define SK_STEPV(X, n) X(STEP_V##n, "step_v" #n, "Step Seq " #n, PK_FLOAT, -1, 1, (((n) % 4) == 1 ? 0.8f : (((n) % 2) == 0 ? -0.4f : 0.2f)), "", "")
+#define SK_DRAWP(X, n) X(DRAW_P##n, "draw_p" #n, "LFO Desenhado " #n, PK_FLOAT, -1, 1, ((n) <= 16 ? -1.0f + ((n) - 1) * 0.125f : 1.0f - ((n) - 17) * 0.125f), "", "")
+#define SK_MENVP(X, n) \
+    X(MENV_X##n, "menv_x" #n, "Env Multi X" #n, PK_FLOAT, 0, 1, ((n) == 1 ? 0.0f : ((n) == 2 ? 0.08f : ((n) == 3 ? 0.30f : 1.0f))), "", "") \
+    X(MENV_Y##n, "menv_y" #n, "Env Multi Y" #n, PK_FLOAT, 0, 1, ((n) == 1 ? 0.0f : ((n) == 2 ? 1.0f : ((n) == 3 ? 0.55f : 0.35f))), "", "")
+
 #define SK_FXSLOT(X, E, id, NM) \
-    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 10, 0, "", SK_FXTYPES) \
+    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 11, 0, "", SK_FXTYPES) \
     X(E##_P1,   id "_p1",   "FX " NM " Param 1", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P2,   id "_p2",   "FX " NM " Param 2", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P3,   id "_p3",   "FX " NM " Param 3", PK_FLOAT, 0, 1, 0.5f, "", "") \
@@ -212,7 +220,33 @@ inline constexpr int kNumDivs = 16;
     X(ARP_EDIT, "arp_edit", "Arp Padrão Próprio", PK_BOOL, 0, 1, 0, "", "") \
     X(ARP_LEN,  "arp_len",  "Arp Passos", PK_INT, 1, 16, 16, "", "") \
     SK_ARPSTEP(X, 1) SK_ARPSTEP(X, 2) SK_ARPSTEP(X, 3) SK_ARPSTEP(X, 4) SK_ARPSTEP(X, 5) SK_ARPSTEP(X, 6) SK_ARPSTEP(X, 7) SK_ARPSTEP(X, 8) \
-    SK_ARPSTEP(X, 9) SK_ARPSTEP(X, 10) SK_ARPSTEP(X, 11) SK_ARPSTEP(X, 12) SK_ARPSTEP(X, 13) SK_ARPSTEP(X, 14) SK_ARPSTEP(X, 15) SK_ARPSTEP(X, 16)
+    SK_ARPSTEP(X, 9) SK_ARPSTEP(X, 10) SK_ARPSTEP(X, 11) SK_ARPSTEP(X, 12) SK_ARPSTEP(X, 13) SK_ARPSTEP(X, 14) SK_ARPSTEP(X, 15) SK_ARPSTEP(X, 16) \
+    /* qualidade de áudio: oversampling do motor inteiro */ \
+    X(QUALITY, "quality", "Qualidade", PK_CHOICE, 0, 2, 0, "", "Normal|Alta (2x)|Máxima (4x)") \
+    /* step sequencer (fonte de modulação por voz, sincronizado ao tempo) */ \
+    X(STEP_LEN, "step_len", "Step Seq Passos", PK_INT, 1, 16, 8, "", "") \
+    X(STEP_DIV, "step_div", "Step Seq Divisão", PK_CHOICE, 0, 15, 12, "", SK_DIVLIST) \
+    X(STEP_SMOOTH, "step_smooth", "Step Seq Suavizar", PK_FLOAT, 0, 1, 0, "%", "") \
+    SK_STEPV(X, 1) SK_STEPV(X, 2) SK_STEPV(X, 3) SK_STEPV(X, 4) SK_STEPV(X, 5) SK_STEPV(X, 6) SK_STEPV(X, 7) SK_STEPV(X, 8) \
+    SK_STEPV(X, 9) SK_STEPV(X, 10) SK_STEPV(X, 11) SK_STEPV(X, 12) SK_STEPV(X, 13) SK_STEPV(X, 14) SK_STEPV(X, 15) SK_STEPV(X, 16) \
+    /* LFO desenhado (32 pontos) */ \
+    X(DRAW_RATE, "draw_rate", "LFO Desenhado Taxa", PK_FLOAT, 0.05f, 30, 1, "Hz", "") \
+    X(DRAW_SYNC, "draw_sync", "LFO Desenhado Sync", PK_BOOL, 0, 1, 1, "", "") \
+    X(DRAW_DIV,  "draw_div",  "LFO Desenhado Divisão", PK_CHOICE, 0, 15, 6, "", SK_DIVLIST) \
+    SK_DRAWP(X, 1) SK_DRAWP(X, 2) SK_DRAWP(X, 3) SK_DRAWP(X, 4) SK_DRAWP(X, 5) SK_DRAWP(X, 6) SK_DRAWP(X, 7) SK_DRAWP(X, 8) \
+    SK_DRAWP(X, 9) SK_DRAWP(X, 10) SK_DRAWP(X, 11) SK_DRAWP(X, 12) SK_DRAWP(X, 13) SK_DRAWP(X, 14) SK_DRAWP(X, 15) SK_DRAWP(X, 16) \
+    SK_DRAWP(X, 17) SK_DRAWP(X, 18) SK_DRAWP(X, 19) SK_DRAWP(X, 20) SK_DRAWP(X, 21) SK_DRAWP(X, 22) SK_DRAWP(X, 23) SK_DRAWP(X, 24) \
+    SK_DRAWP(X, 25) SK_DRAWP(X, 26) SK_DRAWP(X, 27) SK_DRAWP(X, 28) SK_DRAWP(X, 29) SK_DRAWP(X, 30) SK_DRAWP(X, 31) SK_DRAWP(X, 32) \
+    /* envelope multi-ponto (até 8 pontos; sustain num ponto; libertação) */ \
+    X(MENV_N,   "menv_n",   "Env Multi Pontos",   PK_INT, 2, 8, 4, "", "") \
+    X(MENV_LEN, "menv_len", "Env Multi Duração",  PK_FLOAT, 20, 8000, 800, "ms", "") \
+    X(MENV_SUS, "menv_sus", "Env Multi Sustain",  PK_INT, 0, 8, 3, "", "") \
+    X(MENV_REL, "menv_rel", "Env Multi Libertação", PK_FLOAT, 5, 5000, 300, "ms", "") \
+    X(MENV_LOOP, "menv_loop", "Env Multi Loop",   PK_BOOL, 0, 1, 0, "", "") \
+    SK_MENVP(X, 1) SK_MENVP(X, 2) SK_MENVP(X, 3) SK_MENVP(X, 4) SK_MENVP(X, 5) SK_MENVP(X, 6) SK_MENVP(X, 7) SK_MENVP(X, 8) \
+    /* MPE: curvatura por nota (canais 2-16), pressão e slide (CC74) */ \
+    X(MPE_ON,    "mpe_on",    "MPE", PK_BOOL, 0, 1, 0, "", "") \
+    X(MPE_RANGE, "mpe_range", "MPE Curvatura por nota", PK_INT, 1, 96, 48, "st", "")
 
 // --------------------------------- enum + tabela --------------------------------
 #define SK_ENUM_ROW(E, id, name, kind, mn, mx, def, unit, choices) P_##E,

@@ -27,7 +27,7 @@ inline juce::String formatValue (const sk::ParamInfo& pi, double v)
 }
 
 // -------------------------------------------------------------------------------- potenciómetro
-class Knob : public juce::Slider
+class Knob : public juce::Slider, public juce::DragAndDropTarget
 {
 public:
     Knob (SynthKeyProcessor& p, int paramIdx, const juce::String& label, bool bipolarArc = false, bool fxNormalized = false)
@@ -39,6 +39,16 @@ public:
         attach = std::make_unique<juce::SliderParameterAttachment> (*p.param (paramIdx), *this, nullptr);
         textFromValueFunction = [pi = info, nf = fx] (double v) { if (nf) return juce::String ((int) std::lround (v * 100.0)) + " %"; return formatValue (pi, v); };
         setDoubleClickReturnValue (true, info.def);
+    }
+    // ---- largar uma origem de modulação (do painel de origens) em cima do botão liga-a automaticamente
+    bool isInterestedInDragSource (const SourceDetails& d) override { return d.description.toString().startsWith (kModDragPrefix) && modDstForParam (pidx) != 0; }
+    void itemDragEnter (const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override { dropHover = false; repaint(); }
+    void itemDropped (const SourceDetails& d) override
+    {
+        dropHover = false; repaint();
+        const int src = d.description.toString().substring ((int) std::strlen (kModDragPrefix)).getIntValue();
+        const auto msg = assignModulation (*procRef, src, modDstForParam (pidx)); if (msg.isNotEmpty()) say (msg, false);
     }
     void setCaption (const juce::String& c) { if (c != caption) { caption = c; repaint(); } }
     juce::String caption;
@@ -71,6 +81,7 @@ public:
                   g.setColour (theme::accent2()); g.strokePath (mr, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
               }
           } }
+        if (dropHover) { g.setColour (theme::accent2()); g.drawEllipse (kr.expanded (3.0f), 2.5f); g.setColour (theme::accent2().withAlpha (0.18f)); g.fillEllipse (kr.expanded (3.0f)); }
         // ponteiro
         juce::Path ptr; ptr.addRoundedRectangle (-1.2f, -rad * 0.62f, 2.4f, rad * 0.34f, 1.0f);
         g.setColour (juce::Colours::white); g.fillPath (ptr, juce::AffineTransform::rotation (ang).translated (cx, cy));
@@ -80,7 +91,7 @@ public:
         g.drawFittedText (showVal ? getTextFromValue (getValue()) : caption, 0, (int) b.getHeight() - 17, (int) b.getWidth(), 15, juce::Justification::centred, 1, 0.8f);
     }
 private:
-    sk::ParamInfo info; bool bipolar, fx; SynthKeyProcessor* procRef; int pidx;
+    sk::ParamInfo info; bool bipolar, fx; SynthKeyProcessor* procRef; int pidx; bool dropHover = false;
     std::unique_ptr<juce::SliderParameterAttachment> attach;
 };
 

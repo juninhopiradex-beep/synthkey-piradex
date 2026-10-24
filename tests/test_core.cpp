@@ -208,6 +208,147 @@ int main()
         }
     }
 
+    // ---------------------------------------------------------------- oversampling, formante, delay sincronizado
+    {
+        std::printf ("[7c] wavetable do utilizador (importada)\n");
+        {
+            // 1) ciclo único de 600 amostras (serra) → toda a tabela; 2) tabela estilo Serum de 4 ciclos × 2048; 3) som qualquer
+            std::vector<float> one (600); for (int i = 0; i < 600; ++i) one[(size_t) i] = 2.0f * (float) i / 600.0f - 1.0f;
+            std::vector<float> multi (4 * 2048); for (int c = 0; c < 4; ++c) for (int i = 0; i < 2048; ++i) multi[(size_t) (c * 2048 + i)] = std::sin (6.2831853f * (float) (c + 1) * (float) i / 2048.0f);
+            std::vector<float> noiseish (30000); for (size_t i = 0; i < noiseish.size(); ++i) noiseish[i] = std::sin ((float) i * 0.013f) * std::sin ((float) i * 0.00041f);
+            std::vector<float> tiny (10, 0.5f);
+            std::vector<float> fr;
+            CHECK (! Wavetables::framesFromSignal (tiny.data(), 10, fr), "sinal demasiado curto devia ser recusado");
+            const std::vector<float>* sigs[3] = { &one, &multi, &noiseish };
+            for (int k = 0; k < 3; ++k)
+            {
+                CHECK (Wavetables::framesFromSignal (sigs[k]->data(), (int) sigs[k]->size(), fr), "framesFromSignal %d", k);
+                CHECK ((int) fr.size() == Wavetables::kFrames * Wavetables::kSize, "tamanho das frames %d", k);
+                CHECK (finite (fr), "NaN nas frames %d", k);
+                defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 1; P[P_A_WTTAB] = (float) Wavetables::kUserTable; P[P_A_WTPOS] = 0.0f; P[P_SUB_LEVEL] = kParams[P_SUB_LEVEL].mn; P[P_B_ON] = 0; P[P_NOISE_LEVEL] = kParams[P_NOISE_LEVEL].mn; P[P_A_UNI] = 1; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_LIM_ON] = 0;
+                Engine e; e.prepare (SR, 512); e.setParams (P);
+                { e.noteOn (60, 1.0f); auto r0 = run (e, 20); CHECK (finite (r0.L), "tabela do utilizador por carregar devia ser segura (k=%d)", k); e.panic(); }
+                CHECK (e.userWavetable().setSignal (sigs[k]->data(), (int) sigs[k]->size()), "setSignal %d", k);
+                e.noteOn (60, 1.0f); auto r = run (e, 40);
+                CHECK (finite (r.L), "NaN com tabela do utilizador %d", k);
+                CHECK (rmsOf (r.L, 4000, r.L.size()) > 0.02, "tabela do utilizador %d sem som", k);
+                if (k == 1)   // frame 0 = 1 ciclo de seno → fundamental em 261.6 Hz
+                { const float f = measureFreq (r.L, 12000, 8192, 261.63f, (float) SR); CHECK (std::fabs (f / 261.63f - 1.0f) < 0.004f, "tabela do utilizador: frequência %.2f", f); }
+                // recuperar as frames (projeto) e reconstruir dá o mesmo som
+                auto saved = e.userWavetable().frames(); UserWavetable u2; CHECK (u2.setFrames (saved), "setFrames");
+                CHECK (std::fabs (u2.cycle (5, 0)[100] - e.userWavetable().cycle (5, 0)[100]) < 1e-5f, "reconstrução diferente");
+            }
+        }
+        std::printf ("[7d] novas fontes de modulação (step, LFO desenhado, env multi-ponto, pressão, MPE)\n");
+        for (int sl = 0; sl < kNumModSlots; ++sl) { const int b = modSlotBase (sl); CHECK ((int) kParams[b].mx == MS_COUNT - 1, "intervalo da origem da matriz cobre todas as fontes"); CHECK ((int) kParams[b + 1].mx == MD_COUNT - 1, "intervalo do destino da matriz cobre todos os destinos"); }
+        {
+            auto base = [&] { defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_B_ON] = 0; P[P_A_UNI] = 1; P[P_SUB_LEVEL] = kParams[P_SUB_LEVEL].mn; P[P_NOISE_LEVEL] = kParams[P_NOISE_LEVEL].mn;
+                              P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_LIM_ON] = 0; };
+            auto route = [&] (int slot, int src, int dst, float amt) { const int b = modSlotBase (slot); P[b] = (float) src; P[b + 1] = (float) dst; P[b + 2] = amt; };
+            auto semis = [] (float st) { return 261.63f * std::pow (2.0f, st / 12.0f); };
+            auto freqAt = [&] (const Rendered& r, double t0, double t1, float guess) { return measureFreq (r.L, (size_t) (t0 * SR), (size_t) ((t1 - t0) * SR), guess, (float) SR); };
+            auto near = [] (float f, float want) { return std::fabs (f / want - 1.0f) < 0.006f; };
+            // step sequencer: 2 passos (+1, -1) de 1/4 a 120 bpm → ±6 semitons (0.25 × 24)
+            {
+                base(); route (0, MS_STEP, MD_PITCH_ALL, 0.25f); P[P_STEP_LEN] = 2; P[P_STEP_DIV] = 6; P[P_STEP_SMOOTH] = 0; P[P_STEP_V1] = 1; P[P_STEP_V1 + 1] = -1;
+                Engine e; e.prepare (SR, 512); e.setBpm (120.0f); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 160);
+                const float f1 = freqAt (r, 0.15, 0.45, semis (6)), f2 = freqAt (r, 0.65, 0.95, semis (-6)), f3 = freqAt (r, 1.15, 1.45, semis (6));
+                CHECK (near (f1, semis (6)), "step 1: %.1f Hz (esperado %.1f)", f1, semis (6));
+                CHECK (near (f2, semis (-6)), "step 2: %.1f Hz (esperado %.1f)", f2, semis (-6));
+                CHECK (near (f3, semis (6)), "step ao fim de 2 passos volta ao 1: %.1f Hz", f3);
+                CHECK (finite (r.L), "NaN no step seq");
+                // suavizado: continua finito e passa por valores intermédios
+                P[P_STEP_SMOOTH] = 1.0f; Engine e2; e2.prepare (SR, 512); e2.setBpm (120.0f); e2.setParams (P); e2.noteOn (60, 1.0f); auto r2 = run (e2, 60); CHECK (finite (r2.L), "NaN no step suavizado");
+            }
+            // LFO desenhado: valor constante 0.5 → +6 st; e forma rampa a 2 Hz não dá NaN
+            {
+                base(); route (0, MS_DRAW, MD_PITCH_ALL, 0.5f); P[P_DRAW_SYNC] = 0; P[P_DRAW_RATE] = 2.0f; for (int i = 0; i < 32; ++i) P[P_DRAW_P1 + i] = 0.5f;
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 60);
+                const float f = freqAt (r, 0.2, 0.5, semis (6)); CHECK (near (f, semis (6)), "LFO desenhado constante: %.1f Hz", f);
+                for (int i = 0; i < 32; ++i) P[P_DRAW_P1 + i] = (i % 2) ? 1.0f : -1.0f;
+                Engine e2; e2.prepare (SR, 512); e2.setParams (P); e2.noteOn (60, 1.0f); auto r2 = run (e2, 60); CHECK (finite (r2.L), "NaN no LFO desenhado");
+            }
+            // envelope multi-ponto: sustain no ponto 3 (nível 0.55) → +0.275×24 = 6.6 st
+            {
+                base(); route (0, MS_MENV, MD_PITCH_ALL, 0.5f); P[P_MENV_LEN] = 400; P[P_MENV_SUS] = 3; P[P_MENV_REL] = 200;
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 70);
+                const float f = freqAt (r, 0.2, 0.5, semis (6.6f)); CHECK (near (f, semis (6.6f)), "env multi-ponto no sustain: %.1f Hz (esperado %.1f)", f, semis (6.6f));
+                e.noteOff (60); auto r2 = run (e, 100); CHECK (finite (r2.L), "NaN na libertação da env multi-ponto");
+                // sem sustain nem loop: o nível final do último ponto (0.35) mantém-se
+                P[P_MENV_SUS] = 0; Engine e3; e3.prepare (SR, 512); e3.setParams (P); e3.noteOn (60, 1.0f); auto r3 = run (e3, 90);
+                const float f3 = freqAt (r3, 0.5, 0.8, semis (0.175f * 24.0f)); CHECK (near (f3, semis (4.2f)), "env multi-ponto no fim: %.1f Hz (esperado %.1f)", f3, semis (4.2f));
+            }
+            // pressão por nota (aftertouch polifónico / MPE) e curvatura MPE
+            {
+                base(); route (0, MS_PRESSURE, MD_PITCH_ALL, 0.5f);
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); e.setNotePressure (60, 0.5f); auto r = run (e, 40);
+                const float f = freqAt (r, 0.2, 0.4, semis (6)); CHECK (near (f, semis (6)), "pressão por nota: %.1f Hz", f);
+                Engine e2; e2.prepare (SR, 512); e2.setParams (P); e2.noteOn (60, 1.0f); e2.noteOn (67, 1.0f); e2.setNotePressure (67, 1.0f); auto r2 = run (e2, 40); CHECK (finite (r2.L), "NaN com 2 notas");
+                base(); P[P_MPE_RANGE] = 48; Engine e3; e3.prepare (SR, 512); e3.setParams (P); e3.noteOn (60, 1.0f); e3.setNoteBend (60, 0.25f); auto r3 = run (e3, 40);
+                const float f3 = freqAt (r3, 0.2, 0.4, semis (12)); CHECK (near (f3, semis (12)), "curvatura MPE: %.1f Hz", f3);
+                // a nota vizinha não é afetada
+                Engine e4; e4.prepare (SR, 512); e4.setParams (P); e4.noteOn (60, 1.0f); e4.noteOn (72, 1.0f); e4.setNoteBend (72, -0.25f); auto r4 = run (e4, 40); CHECK (finite (r4.L), "NaN com curvatura em 2 notas");
+            }
+        }
+        std::printf ("[7b] oversampling / formante / delay tempo\n");
+        double ref = 0;
+        for (int q = 0; q < 3; ++q)
+        {
+            defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 5000; P[P_LIM_ON] = 0; P[P_QUALITY] = (float) q;
+            Engine e; e.setQuality (q); e.prepare (SR, 512); e.setParams (P); e.noteOn (81, 1.0f);   // lá 880 Hz
+            auto r = run (e, 40); CHECK (finite (r.L), "quality %d: NaN", q);
+            const double rm = rmsOf (r.L, 8192, r.L.size()); if (q == 0) ref = rm;
+            CHECK (std::fabs (20.0 * std::log10 (rm / ref)) < 0.6, "quality %d: nível %.2f dB vs normal", q, 20.0 * std::log10 (rm / ref));
+            const float f = measureFreq (r.L, 12000, 8192, 880.0f, (float) SR); CHECK (std::fabs (f / 880.0f - 1.0f) < 0.003f, "quality %d: frequência %.2f", q, f);
+            CHECK (e.quality() == q, "quality() = %d", e.quality());
+            if (q > 0) CHECK (e.latencySamples() >= 72 && e.latencySamples() < 120, "latência com oversampling: %d", e.latencySamples());
+            // blocos de tamanho diferente do preparado também têm de funcionar
+            auto r2 = run (e, 30, 77); CHECK (finite (r2.L), "quality %d: NaN com bloco 77", q);
+        }
+        // oversampling reduz aliasing: serra-FM em nota aguda, energia acima de 18 kHz
+        {
+            double hi[3];
+            for (int q = 0; q < 3; ++q)
+            {
+                defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_A_FMAMT] = 0.8f; P[P_A_FMRAT] = 3; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_LIM_ON] = 0; P[P_QUALITY] = (float) q;
+                Engine e; e.setQuality (q); e.prepare (SR, 512); e.setParams (P); e.noteOn (96, 1.0f);
+                auto r = run (e, 40); const size_t a = 12000, len = 8192; double en = 0;
+                for (float fq = 18500.0f; fq < 22000.0f; fq += 90.0f) { double re = 0, im = 0; for (size_t i = 0; i < len; ++i) { const double ph = 6.283185307179586 * fq * (double) i / SR; re += r.L[a + i] * std::cos (ph); im += r.L[a + i] * std::sin (ph); } en += re * re + im * im; }
+                hi[q] = en;
+            }
+            std::printf ("   energia >18 kHz: normal %.3g, 2x %.3g, 4x %.3g\n", hi[0], hi[1], hi[2]);
+            CHECK (hi[2] <= hi[0] * 1.05, "4x não reduz aliasing");
+        }
+        // formante: ruído filtrado muda de espectro conforme a vogal
+        {
+            double c1[2];
+            for (int k = 0; k < 2; ++k)
+            {
+                defaults(); P[P_A_ON] = 0; P[P_B_ON] = 0; P[P_NOISE_LEVEL] = -6; P[P_F1_TYPE] = 9; P[P_F1_CUT] = k ? 3000.0f : 30.0f; P[P_F1_RES] = 0.6f; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_LIM_ON] = 0;
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f);
+                auto r = run (e, 30); CHECK (finite (r.L) && peak (r.L) > 0.001f, "formante %d: mudo ou NaN (%g)", k, peak (r.L));
+                double num = 0, den = 0; for (size_t i = 8192; i + 1 < r.L.size(); ++i) { const double d = r.L[i + 1] - r.L[i]; num += d * d; den += (double) r.L[i] * r.L[i]; }
+                c1[k] = num / std::max (den, 1e-12);
+            }
+            CHECK (std::fabs (c1[0] - c1[1]) > 0.05 * std::max (c1[0], c1[1]), "formante: vogais A e U soam iguais (%.3f vs %.3f)", c1[0], c1[1]);
+        }
+        // delay sincronizado: 1/8 a 120 bpm = 250 ms = 12000 amostras
+        {
+            FxUnit fx; fx.prepare ((float) SR, 512); std::vector<float> L (512 * 40, 0.0f), R (L.size(), 0.0f); L[0] = R[0] = 1.0f;
+            float pp[5] = { 4.0f / 7.0f, 0.3f, 1.0f, 0.0f, 0.0f };
+            for (int b = 0; b < 40; ++b) fx.process (FxUnit::DelaySync, pp, 1.0f, L.data() + b * 512, R.data() + b * 512, 512, 120.0f);
+            int idx = -1; float best = 0; for (int i = 2000; i < 20000; ++i) if (std::fabs (L[(size_t) i]) > best) { best = std::fabs (L[(size_t) i]); idx = i; }
+            CHECK (std::abs (idx - 12000) < 40, "delay 1/8 a 120 bpm: eco em %d (esperado 12000)", idx);
+        }
+        // reverb continua estável com a nova difusão
+        {
+            FxUnit fx; fx.prepare ((float) SR, 512); std::vector<float> L (512 * 200, 0.0f), R (L.size(), 0.0f); L[0] = R[0] = 1.0f; float pp[5] = { 0.6f, 0.8f, 0.3f, 0.1f, 1.0f };
+            for (int b = 0; b < 200; ++b) fx.process (FxUnit::Reverb, pp, 1.0f, L.data() + b * 512, R.data() + b * 512, 512, 120.0f);
+            CHECK (finite (L) && peak (L) < 2.0f, "reverb instável: pico %g", peak (L));
+            double early = rmsOf (L, 100, 3000), late = rmsOf (L, 60000, 100000); CHECK (early > late, "reverb: cauda maior que o início?");
+        }
+    }
+
     // ---------------------------------------------------------------- samples e packs
     {
         std::printf ("[8] samples e packs\n");

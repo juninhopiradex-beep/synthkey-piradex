@@ -25,7 +25,23 @@ public:
     static constexpr int kSub = 32;
     static constexpr int kMaxUni = 8;
 
+    // sampleRate / maxBlock são os do anfitrião; com oversampling o motor corre a sampleRate * factor
     void prepare (double sampleRate, int maxBlock)
+    {
+        hostSr = sampleRate; hostMax = std::max (maxBlock, 1);
+        prepareCore (sampleRate * (double) factor, std::max (maxBlock, 1) * factor);
+        buildDecimator();
+    }
+    // 0 = normal, 1 = 2x, 2 = 4x (reinicia as vozes)
+    void setQuality (int q)
+    {
+        const int f = q >= 2 ? 4 : (q == 1 ? 2 : 1);
+        if (f == factor) return;
+        factor = f; if (hostSr > 0) prepare (hostSr, hostMax);
+    }
+    int quality() const { return factor == 4 ? 2 : (factor == 2 ? 1 : 0); }
+
+    void prepareCore (double sampleRate, int maxBlock)
     {
         sr = (float) sampleRate; maxN = std::max (maxBlock, kSub);
         wt = &Wavetables::get();
@@ -45,17 +61,23 @@ public:
         masterGain.snap (1.0f); peakL = peakR = 0;
     }
     void setParams (const float* p) { prm = p; }
+    UserWavetable& userWavetable() { return userWt; }
     void setLibrary (const Library* l) { if (l != lib) { lib = l; panic(); for (auto& v : voices) { v.zone[0] = v.zone[1] = nullptr; v.sd[0] = v.sd[1] = nullptr; v.instr[0] = v.instr[1] = nullptr; } } }
     void setBpm (double b) { bpm = (float) std::max (20.0, std::min (400.0, b)); }
     void setModWheel (float v) { modWheel = v; }
     void setAftertouch (float v) { aftertouch = v; }
     void setPitchBend (float v) { pitchBend = v; }
+    // expressão por nota (MPE: curvatura −1..1, pressão 0..1, slide 0..1; aftertouch polifónico usa a pressão)
+    void setNoteBend (int note, float v)  { if (note >= 0 && note < 128) exPb[note] = clampf (v, -1.0f, 1.0f); }
+    void setNotePressure (int note, float v) { if (note >= 0 && note < 128) exPress[note] = clampf (v, 0.0f, 1.0f); }
+    void setNoteSlide (int note, float v) { if (note >= 0 && note < 128) exSlide[note] = clampf (v, 0.0f, 1.0f); }
+    void clearNoteExpression() { for (int i = 0; i < 128; ++i) exPb[i] = exPress[i] = exSlide[i] = 0.0f; }
     void setSustain (bool on)
     {
         sustain = on;
         if (! on) for (auto& v : voices) if (v.active && v.held) { v.held = false; releaseVoice (v); }
     }
-    int latencySamples() const { return lim.latency(); }
+    int latencySamples() const { return (lim.latency() + (factor > 1 ? (kTaps[factor == 4 ? 1 : 0] - 1) / 2 : 0) + factor - 1) / factor; }
     int activeVoices() const { int n = 0; for (auto& v : voices) if (v.active && ! v.stolen) ++n; return n; }
     float getPeakL() const { return peakL; }
     float getPeakR() const { return peakR; }
@@ -104,10 +126,23 @@ public:
         stack.clear();
         for (auto& v : voices) if (v.active) { v.held = false; releaseVoice (v); }
     }
-    void panic() { stack.clear(); for (auto& v : voices) { v.active = false; v.f1.reset(); v.f2.reset(); } }
+    void panic() { clearNoteExpression(); stack.clear(); for (auto& v : voices) { v.active = false; v.f1.reset(); v.f2.reset(); } }
 
     // ---------------------------- áudio -----------------------------------------------
     void render (float* L, float* R, int n)
+    {
+        if (factor == 1) { renderCore (L, R, n); return; }
+        int done = 0;
+        while (done < n)
+        {
+            const int k = std::min (n - done, hostMax);
+            renderCore (osL.data() + (kTapsMax - 1), osR.data() + (kTapsMax - 1), k * factor);
+            decimate (L + done, R + done, k);
+            done += k;
+        }
+    }
+
+    void renderCore (float* L, float* R, int n)
     {
         n = std::min (n, maxN);
         std::fill (busL.begin(), busL.begin() + n, 0.0f); std::fill (busR.begin(), busR.begin() + n, 0.0f);
@@ -141,6 +176,39 @@ public:
     }
 
 private:
+    // ---- oversampling: decimação FIR (Kaiser) linear-fase ----
+    static constexpr int kTaps[2] = { 47, 95 }, kTapsMax = 95;
+    static double bessel0 (double x) { double s = 1, t = 1; for (int k = 1; k < 30; ++k) { t *= (x / (2.0 * k)) * (x / (2.0 * k)); s += t; } return s; }
+    void buildDecimator()
+    {
+        if (factor == 1) { osL.clear(); osR.clear(); return; }
+        taps = kTaps[factor == 4 ? 1 : 0]; hfir.assign ((size_t) taps, 0.0f);
+        const double fcN = 0.44 / factor, beta = 9.0, mid = (taps - 1) * 0.5; double sum = 0;
+        std::vector<double> h ((size_t) taps);
+        for (int i = 0; i < taps; ++i)
+        {
+            const double x = i - mid, sinc = x == 0 ? 2 * fcN : std::sin (2 * 3.14159265358979323846 * fcN * x) / (3.14159265358979323846 * x);
+            const double r = x / mid, w = bessel0 (beta * std::sqrt (std::max (0.0, 1.0 - r * r))) / bessel0 (beta);
+            h[(size_t) i] = sinc * w; sum += h[(size_t) i];
+        }
+        for (int i = 0; i < taps; ++i) hfir[(size_t) i] = (float) (h[(size_t) i] / sum);
+        const size_t len = (size_t) (kTapsMax - 1) + (size_t) hostMax * (size_t) factor + 8;
+        osL.assign (len, 0.0f); osR.assign (len, 0.0f);
+    }
+    // osL/osR guardam [histórico (kTapsMax-1) | novo bloco]; a saída j usa as amostras [j*f, j*f+taps)
+    void decimate (float* L, float* R, int k)
+    {
+        const int hist = kTapsMax - 1, total = k * factor, off = hist - (taps - 1);
+        for (int j = 0; j < k; ++j)
+        {
+            const float* a = osL.data() + off + j * factor; const float* b = osR.data() + off + j * factor; float yl = 0, yr = 0;
+            for (int t = 0; t < taps; ++t) { yl += hfir[(size_t) t] * a[t]; yr += hfir[(size_t) t] * b[t]; }
+            L[j] = yl; R[j] = yr;
+        }
+        std::memmove (osL.data(), osL.data() + total, (size_t) hist * 4); std::memmove (osR.data(), osR.data() + total, (size_t) hist * 4);
+    }
+    int factor = 1, taps = 47, hostMax = 512; double hostSr = 0; std::vector<float> hfir, osL, osR;
+
     struct Held { int note; float vel; };
     struct Voice
     {
@@ -148,6 +216,7 @@ private:
         int note = 60; float vel = 0.8f; uint64_t age = 0;
         float curNote = 60, tgtNote = 60;
         Adsr amp, e2, e3; Lfo l1, l2; float lfoT = 0, rnd = 0;
+        float stepBeat = 0, stepSm = 0, drawPh = 0, menvT = 0, menvRelT = 0, menvRelLevel = 0, menvLast = 0; bool menvRel = false;
         VoiceFilter f1, f2;
         float ph[2][kMaxUni] = {}, ph2[2][kMaxUni] = {}, pm[2][kMaxUni] = {};
         double sp[2][kMaxUni] = {};
@@ -158,10 +227,12 @@ private:
     };
 
     float sr = 44100.0f, bpm = 120.0f; int maxN = 512;
+    UserWavetable userWt;
     const float* prm = nullptr; const Wavetables* wt = nullptr; const Library* lib = nullptr;
     Voice voices[kMaxVoices];
     std::vector<Held> stack; uint64_t ageCounter = 0; bool sustain = false; int lastNote = -1;
     float modWheel = 0, aftertouch = 0, pitchBend = 0;
+    float exPb[128] = {}, exPress[128] = {}, exSlide[128] = {};      // expressão por nota (MPE / aftertouch polifónico)
     std::vector<float> busL, busR, aL, aR, bL, bR, xL, xR;
     FxUnit fx[kNumFxSlots]; Limiter lim; Smoother masterGain; float peakL = 0, peakR = 0;
     float globalDst[MD_COUNT] = {};
@@ -201,6 +272,7 @@ private:
         const bool k1 = prm[P_LFO1_KEY] > 0.5f, k2 = prm[P_LFO2_KEY] > 0.5f;
         v.l1.reset (k1 ? prm[P_LFO1_PHASE] : rngGlobal.uni(), (uint32_t) (note * 7919 + (int) ageCounter));
         v.l2.reset (k2 ? prm[P_LFO2_PHASE] : rngGlobal.uni(), (uint32_t) (note * 104729 + (int) ageCounter * 3));
+        v.stepBeat = 0; v.stepSm = prm[P_STEP_V1]; v.drawPh = 0; v.menvT = 0; v.menvRelT = 0; v.menvRelLevel = 0; v.menvLast = 0; v.menvRel = false;
         v.lfoT = 0; v.rnd = rngGlobal.bi(); v.noise.seed ((uint32_t) (ageCounter * 2654435761u));
         if (! wasActive) { v.f1.reset (); v.f2.reset (); v.prevGain = 0; v.subPh = 0; }
         v.fade = 0.0f;
@@ -264,6 +336,22 @@ private:
         }
     }
 
+    // envelope multi-ponto: nível (0..1) no instante t (segundos), pontos em prm[P_MENV_X1..]
+    float menvLevelAt (float tSec) const
+    {
+        const int N = std::max (2, std::min (8, (int) prm[P_MENV_N])); const float len = std::max (0.02f, prm[P_MENV_LEN] * 0.001f);
+        const float x = clampf (tSec / len, 0.0f, 1.0f);
+        float px = 0.0f, py = prm[P_MENV_Y1];
+        for (int i = 1; i < N; ++i)
+        {
+            const float cx = std::max (px, prm[P_MENV_X1 + 2 * i]), cy = prm[P_MENV_Y1 + 2 * i];
+            if (x <= cx) return cx - px < 1.0e-5f ? cy : py + (cy - py) * (x - px) / (cx - px);
+            px = cx; py = cy;
+        }
+        return py;
+    }
+    float menvEndTime() const { const int N = std::max (2, std::min (8, (int) prm[P_MENV_N])); float mx = 0; for (int i = 0; i < N; ++i) mx = std::max (mx, prm[P_MENV_X1 + 2 * i]); return mx * prm[P_MENV_LEN] * 0.001f; }
+
     void renderVoice (Voice& v, int m, float* outL, float* outR)
     {
         // ---------- fontes ----------
@@ -275,6 +363,41 @@ private:
         setEnv (v.e2, P_ENV2_A); setEnv (v.e3, P_ENV3_A); if (! v.stolen) setEnv (v.amp, P_AMP_A);
         float ev2 = 0, ev3 = 0; for (int i = 0; i < m; ++i) { ev2 = v.e2.tick(); ev3 = v.e3.tick(); }
         src[MS_ENV2] = ev2; src[MS_ENV3] = ev3; src[MS_ENVAMP] = v.amp.getLevel();
+        // ---- novas fontes: step sequencer, LFO desenhado, envelope multi-ponto, pressão/slide por nota
+        {
+            const float dt = (float) m / sr, beatsPerSec = bpm / 60.0f;
+            const int stepsN = std::max (1, std::min (16, (int) prm[P_STEP_LEN]));
+            const float stepBeats = kDivBeats[std::min (15, std::max (0, (int) prm[P_STEP_DIV]))];
+            v.stepBeat += dt * beatsPerSec;
+            const int idx = (int) std::floor (v.stepBeat / stepBeats) % stepsN;
+            const float target = prm[P_STEP_V1 + idx], smooth = prm[P_STEP_SMOOTH];
+            if (smooth < 0.01f) v.stepSm = target; else v.stepSm += (target - v.stepSm) * (1.0f - std::exp (-dt / (0.002f + smooth * 0.18f)));
+            src[MS_STEP] = v.stepSm;
+            float cps = prm[P_DRAW_SYNC] > 0.5f ? beatsPerSec / kDivBeats[std::min (15, std::max (0, (int) prm[P_DRAW_DIV]))] : prm[P_DRAW_RATE];
+            v.drawPh += cps * dt; v.drawPh -= std::floor (v.drawPh);
+            const float dp = v.drawPh * 32.0f; const int i0 = std::min (31, (int) dp), i1 = (i0 + 1) & 31; const float fr = dp - (float) i0;
+            src[MS_DRAW] = prm[P_DRAW_P1 + i0] + (prm[P_DRAW_P1 + i1] - prm[P_DRAW_P1 + i0]) * fr;
+            // multi-ponto
+            const float relS = std::max (0.005f, prm[P_MENV_REL] * 0.001f); float lvl;
+            if (v.gate)
+            {
+                const int susP = (int) prm[P_MENV_SUS], N = std::max (2, std::min (8, (int) prm[P_MENV_N]));
+                float tmax = menvEndTime();
+                if (susP >= 1 && susP <= N) tmax = std::max (0.0f, prm[P_MENV_X1 + 2 * (susP - 1)] * prm[P_MENV_LEN] * 0.001f);
+                v.menvT += dt;
+                if (prm[P_MENV_LOOP] > 0.5f && (susP == 0 || susP > N) && v.menvT > tmax && tmax > 0.001f) v.menvT = std::fmod (v.menvT, tmax);
+                else if (v.menvT > tmax) v.menvT = tmax;
+                lvl = menvLevelAt (v.menvT); v.menvLast = lvl;
+            }
+            else
+            {
+                if (! v.menvRel) { v.menvRel = true; v.menvRelLevel = v.menvLast; v.menvRelT = 0; }
+                v.menvRelT += dt; lvl = v.menvRelLevel * std::max (0.0f, 1.0f - v.menvRelT / relS);
+            }
+            src[MS_MENV] = lvl;
+            const int nn = std::max (0, std::min (127, v.note));
+            src[MS_PRESSURE] = exPress[nn]; src[MS_SLIDE] = exSlide[nn];
+        }
         float dst[MD_COUNT] = {};
         // LFOs: a taxa pode ser modulada por outras ligações → 1.ª passagem só para as taxas
         float rateMod[2] = { 0, 0 };
@@ -309,7 +432,7 @@ private:
         // ---------- altura ----------
         const float gl = prm[P_GLIDE];
         if (gl > 1.5f) v.curNote += (v.tgtNote - v.curNote) * (1.0f - std::exp (-(float) m / (gl * 0.001f * sr))); else v.curNote = v.tgtNote;
-        const float common = prm[P_TRANSPOSE] + prm[P_TUNE] * 0.01f + pitchBend * prm[P_PB_RANGE] + dst[MD_PITCH_ALL];
+        const float common = prm[P_TRANSPOSE] + prm[P_TUNE] * 0.01f + pitchBend * prm[P_PB_RANGE] + dst[MD_PITCH_ALL] + exPb[std::max (0, std::min (127, v.note))] * prm[P_MPE_RANGE];
 
         // ---------- motores ----------
         float aOutL[kSub], aOutR[kSub], bOutL[kSub], bOutR[kSub];
@@ -451,10 +574,12 @@ private:
             return;
         }
         // wavetable
-        const int tabI = std::max (0, std::min (Wavetables::kTables - 1, (int) pe[P_A_WTTAB]));
+        const int tabI = std::max (0, std::min (Wavetables::kTables, (int) pe[P_A_WTTAB]));
         const float pos = pe[P_A_WTPOS] + dst[E ? MD_WTPOS_B : MD_WTPOS_A], warp = clampf (pe[P_A_WARP] + dst[E ? MD_WARP_B : MD_WARP_A], -1.0f, 1.0f);
         int f0, f1; float fr; Wavetables::framePos (pos, f0, f1, fr);
-        const float* c0 = wt->cycle (tabI, f0, mip); const float* c1 = wt->cycle (tabI, f1, mip);
+        const float *c0, *c1;
+        if (tabI >= Wavetables::kUserTable && userWt.loaded()) { c0 = userWt.cycle (f0, mip); c1 = userWt.cycle (f1, mip); }
+        else { const int tb = std::min (tabI, Wavetables::kTables - 1); c0 = wt->cycle (tb, f0, mip); c1 = wt->cycle (tb, f1, mip); }
         for (int u = 0; u < uni; ++u)
         {
             const float dt = freq * ratio[u] / sr; float ph = v.ph[E][u], pm = v.pm[E][u]; const float dtm = dt * fmRatio;

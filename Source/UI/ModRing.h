@@ -4,12 +4,18 @@
 // =============================================================================
 #pragma once
 #include <cmath>
+#include <functional>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include "../Core/ParamTable.h"
 #include "../PluginProcessor.h"
 
 namespace ui
 {
 using namespace sk;
+
+// aviso curto na interface (definido pela janela principal)
+inline std::function<void (const juce::String&, bool)>& toastFn() { static std::function<void (const juce::String&, bool)> f; return f; }
+inline void say (const juce::String& m, bool err) { if (toastFn()) toastFn() (m, err); }
 
 struct ModTarget { int param; float scale; bool logCut; };
 
@@ -83,5 +89,41 @@ inline int modMatrixSignature (const SynthKeyProcessor& proc)
         sig = sig * 31 + (int) std::lround (proc.getReal (base + 2) * 1000.0f);
     }
     return sig;
+}
+
+// destino da matriz que mexe neste parâmetro (0 = nenhum): serve para largar uma origem em cima de um botão
+inline int modDstForParam (int paramIdx) { for (int d = 1; d < MD_COUNT; ++d) if (modTargetFor (d).param == paramIdx) return d; return 0; }
+
+inline const char* const kModDragPrefix = "modsrc:";
+
+// quantidade inicial razoável para cada tipo de destino
+inline float defaultModAmount (int src, int dst)
+{
+    float a = 0.4f;
+    switch (dst) { case MD_PITCH_A: case MD_PITCH_B: case MD_PITCH_ALL: a = 0.08f; break; case MD_CUT1: case MD_CUT2: a = 0.3f; break;
+                   case MD_UNIDET_A: case MD_UNIDET_B: case MD_SUB: case MD_NOISE: a = 0.25f; break; default: break; }
+    return (src == MS_KEY) ? a * 0.5f : a;
+}
+
+// liga a origem 'src' ao destino 'dst' no primeiro slot livre (ou reforça uma ligação existente); devolve o texto para a interface
+inline juce::String assignModulation (SynthKeyProcessor& proc, int src, int dst)
+{
+    if (src <= 0 || src >= MS_COUNT || dst <= 0 || dst >= MD_COUNT) return {};
+    const juce::String text = juce::String (juce::CharPointer_UTF8 (kModSrcNames[src])) + juce::String (juce::CharPointer_UTF8 (" \xE2\x86\x92 ")) + juce::String (juce::CharPointer_UTF8 (kModDstNames[dst]));
+    int freeSlot = -1;
+    for (int s = 0; s < kNumModSlots; ++s)
+    {
+        const int b = modSlotBase (s); const int cs = (int) proc.getReal (b), cd = (int) proc.getReal (b + 1);
+        if (cs == src && cd == dst)
+        {
+            const float a = proc.getReal (b + 2); const float na = std::fabs (a) < 0.02f ? defaultModAmount (src, dst) : std::min (1.0f, a + 0.2f * (a < 0 ? -1.0f : 1.0f));
+            proc.setReal (b + 2, na); return text + juce::String (juce::CharPointer_UTF8 ("  (quantidade ")) + juce::String ((int) std::lround (na * 100.0f)) + " %)";
+        }
+        if (freeSlot < 0 && (cs == 0 || cd == 0)) freeSlot = s;
+    }
+    if (freeSlot < 0) return juce::String (juce::CharPointer_UTF8 ("A matriz de modula\xC3\xA7\xC3\xA3o est\xC3\xA1 cheia (16 liga\xC3\xA7\xC3\xB5" "es)."));
+    const int b = modSlotBase (freeSlot);
+    proc.setReal (b, (float) src); proc.setReal (b + 1, (float) dst); proc.setReal (b + 2, defaultModAmount (src, dst));
+    return text + juce::String (juce::CharPointer_UTF8 ("  \xC2\xB7 afina na MATRIZ"));
 }
 }

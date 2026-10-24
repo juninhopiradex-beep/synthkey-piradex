@@ -4,6 +4,7 @@
 #pragma once
 #include "Controls.h"
 #include "../Core/MidiFx.h"
+#include "ImportUI.h"
 
 namespace ui
 {
@@ -72,7 +73,7 @@ public:
 private:
     void showMenu()
     {
-        juce::PopupMenu menu; ids.clear(); int nextId = 1000;
+        juce::PopupMenu menu; ids.clear(); userIds.clear(); int nextId = 1000;
         auto& acc = AccessManager::get();
         for (auto& e : PackHub::get().entries())
         {
@@ -86,12 +87,30 @@ private:
             }
             menu.addSubMenu (TX (e.name.c_str()) + (e.installed ? (usable ? juce::String() : TX ("   \xF0\x9F\x94\x92")) : TX ("   (n\xC3\xA3o instalado)")), sub, e.installed);
         }
+        // ---- samples do utilizador
+        {
+            juce::PopupMenu usr; const auto ui = PackHub::get().userInstruments(); int userBase = 5000;
+            if (ui.empty()) usr.addItem (-1, TX ("(vazio â importa um WAV)"), false);
+            for (auto& in : ui) { usr.addItem (userBase + (int) userIds.size(), TX (in.name.c_str()) + (in.cat == "Tonal" ? juce::String() : TX ("   Â· percussÃ£o")), true, proc.getSampleId (E).toStdString() == in.id); userIds.push_back (in.id); }
+            usr.addSeparator(); usr.addItem (900, TX ("Importar WAVâ¦"));
+            usr.addItem (901, TX ("Abrir pasta de samples"));
+            if (! ui.empty()) { juce::PopupMenu del; for (size_t i = 0; i < ui.size(); ++i) del.addItem (7000 + (int) i, TX (ui[i].name.c_str())); usr.addSubMenu (TX ("Apagar sampleâ¦"), del); }
+            menu.addSeparator(); menu.addSubMenu (TX ("Utilizador (os teus WAV)"), usr);
+        }
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (getWidth()), [this] (int r)
         {
-            if (r >= 1000 && r - 1000 < (int) ids.size()) { proc.setSampleId (E, TX (ids[(size_t) (r - 1000)].c_str())); repaint(); }
+            if (r >= 1000 && r < 5000 && r - 1000 < (int) ids.size()) { proc.setSampleId (E, TX (ids[(size_t) (r - 1000)].c_str())); repaint(); }
+            else if (r >= 5000 && r < 7000 && r - 5000 < (int) userIds.size()) { proc.setSampleId (E, TX (userIds[(size_t) (r - 5000)].c_str())); repaint(); }
+            else if (r == 900) chooseAudioFile (chooser, TX ("Importar sample (WAV)"), [this] (const juce::File& f) { importSampleFile (proc, E, f); repaint(); });
+            else if (r == 901) skpaths::userSamples().revealToUser();
+            else if (r >= 7000 && r - 7000 < (int) userIds.size())
+            {
+                const auto id = userIds[(size_t) (r - 7000)]; const auto err = PackHub::get().removeUserSample (id);
+                say (err.isEmpty() ? TX ("Sample apagado.") : err, err.isNotEmpty());
+            }
         });
     }
-    SynthKeyProcessor& proc; int E; std::vector<std::string> ids;
+    SynthKeyProcessor& proc; int E; std::vector<std::string> ids, userIds; std::shared_ptr<juce::FileChooser> chooser;
 };
 
 // ===================================================================================== SOM
@@ -118,6 +137,7 @@ private:
         s->add (new SampleChooser (proc, E), 190, 28, 1, [=] { return type() == 2; });
         C (s, P_A_WAVE + o, 110, 1, [=] { return type() == 0; });
         C (s, P_A_WTTAB + o, 140, 1, [=] { return type() == 1; });
+        s->add (new WavetableImportButton (proc, E), 44, 28, 1, [=] { return type() == 1; });
         T (s, P_A_RETRIG + o, "RETRIG.", 74, 3, [=] { return type() != 2; });
         s->newRow();
         K (s, P_A_LEVEL + o, TX ("NÍVEL")); K (s, P_A_PAN + o, "PAN", 2); K (s, P_A_COARSE + o, "SEMITONS"); K (s, P_A_FINE + o, "FINO", 2);
@@ -254,11 +274,11 @@ public:
     int signature() const { return ((int) proc.getReal (base)) * 10 + mode; }
     void refresh()
     {
-        static const char* names[11][5] = {
+        static const char* names[12][5] = {
             { "", "", "", "", "" }, { "GRAVES", "MÉDIOS", "FREQ.", "AGUDOS", "Q" }, { "LIMIAR", "RAZÃO", "ATAQUE", "LIBERT.", "GANHO" }, { "DRIVE", "TOM", "BIAS", "TIPO", "SAÍDA" },
             { "TAXA", "PROF.", "ATRASO", "VOZES", "LARGURA" }, { "TEMPO", "FEEDBACK", "TOM", "PING-PONG", "DESVIO" }, { "TAMANHO", "DECAIM.", "ABAFAR", "PRÉ-DELAY", "LARGURA" },
-            { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" } };
-        const int t = juce::jlimit (0, 10, (int) proc.getReal (base));
+            { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" }, { "DIVISÃO", "FEEDBACK", "TOM", "PING-PONG", "PONTUADO" } };
+        const int t = juce::jlimit (0, 11, (int) proc.getReal (base));
         for (int i = 0; i < 5; ++i)
         {
             const juce::String n = TX (names[t][i]); k[i]->setCaption (n);
@@ -300,7 +320,7 @@ public:
         }
         auto* o = addSection (TX ("SAÍDAS & ENVIOS"), { 0, 354, 1156, 98 });
         K (o, P_INSA_LEVEL, "INSERT A"); K (o, P_INSB_LEVEL, "INSERT B"); K (o, P_SEND_A, TX ("A → AUX")); K (o, P_SEND_B, TX ("B → AUX")); K (o, P_AUX_RETURN, "RETORNO AUX");
-        C (o, P_OUT_BUS, 130, 2, {}, 20); T (o, P_LIM_ON, "LIMITADOR", 110, 1, {}, 20); K (o, P_LIM_CEIL, "TETO", 2, [this] { return proc.getReal (P_LIM_ON) > 0.5f; });
+        C (o, P_OUT_BUS, 130, 2, {}, 20); T (o, P_LIM_ON, "LIMITADOR", 110, 1, {}, 20); C (o, P_QUALITY, 140, 1, {}, 20); K (o, P_LIM_CEIL, "TETO", 2, [this] { return proc.getReal (P_LIM_ON) > 0.5f; });
         setMode (2);
     }
     void setMode (int m) override { Page::setMode (m); for (auto* s : slots) s->setMode (m); }

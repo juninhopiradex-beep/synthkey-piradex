@@ -173,7 +173,7 @@ struct SvfState
 class VoiceFilter
 {
 public:
-    enum Type { Off = 0, LP12, LP24, HP12, HP24, BP, Notch, Ladder, Comb };
+    enum Type { Off = 0, LP12, LP24, HP12, HP24, BP, Notch, Ladder, Comb, Formant };
 
     void prepare (float sampleRate)
     {
@@ -185,6 +185,7 @@ public:
     void reset()
     {
         for (auto& a : svf) for (auto& s : a) s.reset();
+        for (auto& a : fsvf) for (auto& s : a) s.reset();
         for (auto& l : ladder) for (auto& v : l) v = 0.0f;
         for (auto& ch : comb) std::fill (ch.begin(), ch.end(), 0.0f);
         combW = 0; for (auto& v : combLast) v = 0.0f;
@@ -220,6 +221,7 @@ public:
             return;
         }
         if (type == Comb) { processComb (L, R, n, cutoffHz, res, drive); return; }
+        if (type == Formant) { processFormant (L, R, n, fc, res, drive); return; }
 
         // SVF: LP12 / LP24 / HP12 / HP24 / BP / Notch
         const float q1 = 0.55f + res * res * 18.0f;
@@ -246,6 +248,28 @@ public:
                 x[i] = y;
             }
         }
+    }
+
+    // Formante: 3 ressonadores em paralelo; o corte percorre as vogais A-E-I-O-U (log 20 Hz..20 kHz => 0..4)
+    void processFormant (float* L, float* R, int n, float fc, float res, float drive)
+    {
+        static const float F[5][3] = { { 800, 1150, 2900 }, { 400, 1600, 2700 }, { 350, 1700, 2700 }, { 450, 800, 2830 }, { 325, 700, 2530 } };
+        static const float A[3] = { 1.0f, 0.55f, 0.3f };
+        const float pos = clampf (std::log2 (fc / 20.0f) / std::log2 (1000.0f), 0.0f, 1.0f) * 4.0f;
+        const int i0 = std::min (3, (int) pos); const float fr = pos - (float) i0;
+        const float q = 5.0f + res * 18.0f;
+        SvfCoef cf[3];
+        for (int k = 0; k < 3; ++k) cf[k].set (F[i0][k] + (F[i0 + 1][k] - F[i0][k]) * fr, q, sr);
+        const float gain = 1.0f + drive * 15.0f, post = 1.0f / (1.0f + 0.25f * (gain - 1.0f)); const bool dr = drive > 0.001f;
+        float* ch[2] = { L, R };
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < n; ++i)
+            {
+                float in = ch[c][i]; if (dr) in = fastTanh (in * gain) * post * 1.3f;
+                float y = 0;
+                for (int k = 0; k < 3; ++k) { float lp, bp, hp; fsvf[c][k].tick (in, cf[k], lp, bp, hp); y += bp * cf[k].k * A[k]; }
+                ch[c][i] = y * 2.2f;
+            }
     }
 
     // O Pente precisa de um índice de escrita partilhado — implementação separada e simples:
@@ -276,7 +300,7 @@ public:
 
 private:
     float sr = 44100.0f;
-    SvfState svf[2][2];
+    SvfState svf[2][2], fsvf[2][3];
     float ladder[2][4] = {};
     std::vector<float> comb[2];
     int combLen = 2200, combW = 0;

@@ -145,6 +145,14 @@ public:
             case 6: return std::abs ((s * s + C (1.0f)) * lp2 (q * 0.8f));
             case 7: { const C p = C (1.0f) + s; const C p4 = p * p * p * p; return std::abs (C (1.0f) / (p4 + C (res * 3.95f))); }
             case 8: { const float g = 0.3f + res * 0.65f; return std::sqrt (std::max (1.0e-4f, 1.0f + g * g + 2.0f * g * std::cos (6.2831853f * f / std::max (20.0f, cut)))) / (1.0f + g) * 1.0f; }
+            case 9:
+            {   // formante: soma de 3 ressonâncias; o corte percorre A-E-I-O-U
+                static const float F[5][3] = { { 800, 1150, 2900 }, { 400, 1600, 2700 }, { 350, 1700, 2700 }, { 450, 800, 2830 }, { 325, 700, 2530 } };
+                const float pos = juce::jlimit (0.0f, 1.0f, std::log2 (cut / 20.0f) / std::log2 (1000.0f)) * 4.0f; const int i0 = std::min (3, (int) pos); const float fr = pos - (float) i0;
+                const float qq = 5.0f + res * 18.0f; C sum (0.0f); const float amp[3] = { 1.0f, 0.55f, 0.3f };
+                for (int k = 0; k < 3; ++k) { const float fk = F[i0][k] + (F[i0 + 1][k] - F[i0][k]) * fr, xx = f / fk; const C ss (0.0f, xx); sum += amp[k] * (ss / qq) / (ss * ss + ss / qq + C (1.0f)); }
+                return std::abs (sum) * 2.2f;
+            }
             default: return 1.0f;
         }
     }
@@ -219,7 +227,7 @@ public:
         int E = forced; if (E < 0) E = proc.getReal (P_A_TYPE) == 1.0f ? 0 : (proc.getReal (P_B_TYPE) == 1.0f ? 1 : 0);
         for (int e = 0; e < 2; ++e) btn[e]->setColour (juce::TextButton::buttonColourId, e == E ? theme::accent().withAlpha (0.55f) : juce::Colour (0xFF1A1D30));
         const int o = E ? P_B_ON - P_A_ON : 0; const bool isWt = proc.getReal (P_A_TYPE + o) == 1.0f;
-        const int tab = juce::jlimit (0, Wavetables::kTables - 1, (int) proc.getReal (P_A_WTTAB + o)); const float pos = proc.getReal (P_A_WTPOS + o);
+        const int tab = juce::jlimit (0, Wavetables::kTables, (int) proc.getReal (P_A_WTTAB + o)); const float pos = proc.getReal (P_A_WTPOS + o);
         const auto names = juce::StringArray::fromTokens (TX (kParams[P_A_WTTAB].choices), "|", "");
         g.setColour (theme::text()); g.setFont (theme::font (12.0f, true));
         g.drawText (juce::String (E ? "Motor B" : "Motor A") + (isWt ? TX ("  \xC2\xB7  ") + (tab < names.size() ? names[tab] : juce::String()) : juce::String()), (int) r.getX() + 6, (int) r.getY() + 2, 360, 16, juce::Justification::left);
@@ -234,7 +242,8 @@ public:
         for (int f = F - 1; f >= 0; --f)   // do fundo para a frente
         {
             const float ox = areaX + (F - 1 - f) * dx, oy = topY + 42.0f + (float) (F - 1 - f) * dy;   // frames altas ficam atrás
-            const float* cyc = wt.cycle (tab, f, 0);
+            const float* cyc = (tab >= Wavetables::kUserTable) ? proc.userWavetable().cycle (f, 0) : wt.cycle (tab, f, 0);
+            if (! cyc) { g.setColour (theme::dim()); g.drawText (TX ("Importa um WAV (bot\xC3\xA3o WAV na p\xC3\xA1gina SOM ou arrasta para a janela)"), r.toNearestInt(), juce::Justification::centred); return; }
             juce::Path p, fillP;
             for (int i = 0; i < S; ++i)
             {
