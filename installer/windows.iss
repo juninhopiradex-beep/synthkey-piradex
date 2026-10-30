@@ -41,6 +41,9 @@ Name: "vst3"; Description: "Plugin VST3"; Types: full plugin custom; Flags: fixe
 Name: "app"; Description: "Aplicação independente (Standalone)"; Types: full plugin custom
 Name: "packs"; Description: "Packs de samples (Trap, R&B, Afrobeats, Amapiano, Drill, Kizomba, Kuduro)"; Types: full custom
 
+[Messages]
+WelcomeLabel2=Este assistente vai instalar o SYNTHKEY by Piradex no teu sistema.%n%nProfessional Audio Plugin | Beatfreak Music%nCriador e Desenvolvedor: Ricardo Amorim / Juninho Piradex%nVersao 1.5.1
+
 [Files]
 Source: "..\build\SynthKey_artefacts\Release\VST3\SYNTHKEY by Piradex.vst3\*"; \
   DestDir: "{commoncf64}\VST3\SYNTHKEY by Piradex.vst3"; Components: vst3; \
