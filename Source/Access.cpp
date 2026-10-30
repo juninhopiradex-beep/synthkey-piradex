@@ -2,6 +2,7 @@
 #include "AppPaths.h"
 #include "Core/MiniJson.h"
 #include "Secrets.h"
+#include "Pwtable.h"
 
 using namespace sk;
 
@@ -24,8 +25,8 @@ AccessManager::AccessManager()
     // sessão lembrada neste computador
     const auto id = props->getValue ("loginId"); const auto tok = props->getValue ("loginToken");
     if (id.isNotEmpty() && tok.isNotEmpty())
-        for (int i = 0; i < secrets::kPasswordCount; ++i)
-            if (id == secrets::kPasswords[i].id && tok == tokenFor (i) && ! lic::pwExpired (secrets::kPasswords[i], today())) { setRole (i); refreshAdmin(); break; }
+        for (int i = 0; i < pwtab::kPasswordCount; ++i)
+            if (id == pwtab::kPasswords[i].id && tok == tokenFor (i) && ! lic::pwExpired (pwtab::kPasswords[i], today())) { setRole (i); refreshAdmin(); break; }
 }
 
 int AccessManager::today() const
@@ -43,19 +44,19 @@ int AccessManager::today() const
 
 juce::String AccessManager::tokenFor (int index) const
 {
-    const auto s = std::string (juce::SystemStats::getUniqueDeviceID().toRawUTF8()) + "|" + secrets::kPasswords[index].id + "|" + secrets::kPasswords[index].hashHex + "|SYNTHKEY";
+    const auto s = std::string (juce::SystemStats::getUniqueDeviceID().toRawUTF8()) + "|" + pwtab::kPasswords[index].id + "|" + pwtab::kPasswords[index].hashHex + "|SYNTHKEY";
     return juce::String (crypto::sha256Hex (s));
 }
 
 void AccessManager::setRole (int index)
 {
-    currentIndex = index; roleValue.store ((int) secrets::kPasswords[index].role); unlocked.store (true);
+    currentIndex = index; roleValue.store ((int) pwtab::kPasswords[index].role); unlocked.store (true);
 }
 
 AccessManager::Match AccessManager::matchPassword (const juce::String& password)
 {
     Match m; bool ex = false;
-    m.index = lic::matchPassword (secrets::kPasswords, secrets::kPasswordCount, password.toStdString(), AccessManager::get().today(), ex);
+    m.index = lic::matchPassword (pwtab::kPasswords, pwtab::kPasswordCount, password.toStdString(), AccessManager::get().today(), ex);
     m.expired = ex; return m;
 }
 
@@ -65,7 +66,7 @@ AccessManager::LoginResult AccessManager::applyLogin (Match m, bool remember)
     {
         const juce::ScopedLock sl (lock);
         setRole (m.index);
-        if (remember) { props->setValue ("loginId", juce::String (secrets::kPasswords[m.index].id)); props->setValue ("loginToken", tokenFor (m.index)); }
+        if (remember) { props->setValue ("loginId", juce::String (pwtab::kPasswords[m.index].id)); props->setValue ("loginToken", tokenFor (m.index)); }
         else { props->removeValue ("loginId"); props->removeValue ("loginToken"); }
         props->saveIfNeeded();
     }
@@ -82,13 +83,13 @@ void AccessManager::logout()
 
 void AccessManager::checkExpiry()
 {
-    if (unlocked.load() && currentIndex >= 0 && lic::pwExpired (secrets::kPasswords[currentIndex], today())) logout();
+    if (unlocked.load() && currentIndex >= 0 && lic::pwExpired (pwtab::kPasswords[currentIndex], today())) logout();
 }
 
 int AccessManager::betaDaysLeft() const
 {
     if (! unlocked.load() || role() != lic::Role::Beta || currentIndex < 0) return -1;
-    const auto& e = secrets::kPasswords[currentIndex];
+    const auto& e = pwtab::kPasswords[currentIndex];
     return std::max (0, keys::daysSince2026 (e.expYear, e.expMonth, e.expDay) - today() + 1);
 }
 
@@ -96,7 +97,7 @@ juce::String AccessManager::roleText() const
 {
     if (! unlocked.load()) return {};
     if (role() == lic::Role::Master) return juce::CharPointer_UTF8 ("MESTRE");
-    const auto& e = secrets::kPasswords[std::max (0, currentIndex)];
+    const auto& e = pwtab::kPasswords[std::max (0, currentIndex)];
     return juce::String (juce::CharPointer_UTF8 ("BETA \xC2\xB7 at\xC3\xA9 ")) + juce::String (e.expDay).paddedLeft ('0', 2) + "/" + juce::String (e.expMonth).paddedLeft ('0', 2) + "/" + juce::String (e.expYear);
 }
 
