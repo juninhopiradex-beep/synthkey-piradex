@@ -15,8 +15,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.5.1-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.5.1-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.7.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.7.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.2.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
@@ -141,7 +141,7 @@ a ativação online está prevista para a v1.1.
 * **Teste da Corda:** a janela de cauda (1,5–2,0 s) ultrapassava o vector renderizado (leitura fora dos limites); corrigido (200 blocos).
 * **Regenerar:** `packgen curate Source/Core/GenCurated.h 0.6` (≈9 min) e depois `packgen gains Source/Core/NucleoGains.h`. Um teste falha se um ganho curado estiver desactualizado.
 
-## v1.7.0 (em desenvolvimento) — "top 5": navegador inteligente, efeitos novos, assistente, modo TOCAR, atualizações de packs
+## v1.7.0 — "top 5": navegador inteligente, efeitos novos, assistente, modo TOCAR, atualizações de packs
 
 **Navegador de presets** (`Source/UI/Browser.h`)
 * **Avaliação 1–5 estrelas** por preset (ficheiro `avaliacoes.txt` na pasta do utilizador), favoritos (♥), ordenação (nome, melhor avaliação, favoritos, CPU leve) e filtro por estrelas.
