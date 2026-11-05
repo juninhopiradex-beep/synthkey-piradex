@@ -86,9 +86,9 @@ void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     grooveEvs.reserve (1024); groove.stop();
     sr = sampleRate; engineMax = std::max (512, samplesPerBlock); uiMidi.reset (sampleRate);
-    engine->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0);
+    engine->setQuality (raw[(size_t) P_QUALITY] ? std::min (2, (int) raw[(size_t) P_QUALITY]->load()) : 0);
     engine->prepare (sampleRate, engineMax); midiFx.prepare ((float) sampleRate);
-    engineG->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0); engineG->prepare (sampleRate, engineMax);
+    engineG->setQuality (raw[(size_t) P_QUALITY] ? std::min (2, (int) raw[(size_t) P_QUALITY]->load()) : 0); engineG->prepare (sampleRate, engineMax);
     gTmpL.assign ((size_t) engineMax, 0.0f); gTmpR.assign ((size_t) engineMax, 0.0f); gEvs.reserve (1024);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
     { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); }
@@ -111,7 +111,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     for (int i = 0; i < P_COUNT; ++i) prm[i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;
     prm[P_A_SMP] = (float) smpIdx[0].load(); prm[P_B_SMP] = (float) smpIdx[1].load();
 
-    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); engineG->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
+    { const int q = resolveQuality (prm, engine->quality() == 1 && (int) prm[P_QUALITY] >= 3); if (q != engine->quality()) { engine->setQuality (q); engineG->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
     if (auto* pl = pendingLib.exchange (nullptr)) { engine->setLibrary (pl); engineG->setLibrary (pl); engineLib.store (pl); midiFx.allNotesOff(); }
 
     double bpm = 120.0, ppq = 0.0; bool playing = false;
@@ -372,7 +372,7 @@ juce::String SynthKeyProcessor::renderGrooveWav (const Groove& g, int transpose,
     pr[(size_t) P_A_SMP] = (float) smp[0]; pr[(size_t) P_B_SMP] = (float) smp[1];
 
     constexpr double kSr = 44100.0; constexpr int kBlock = 512;
-    auto eng = std::make_unique<Engine>(); eng->setQuality (std::max (0, std::min (2, (int) pr[(size_t) P_QUALITY]))); eng->prepare (kSr, kBlock);
+    auto eng = std::make_unique<Engine>(); eng->setQuality (resolveQuality (pr.data(), false)); eng->prepare (kSr, kBlock);
     eng->setLibrary (lib.get()); eng->setParams (pr.data()); eng->setBpm (bpm);
     GroovePlayer player; player.start (g, transpose, bpm);
     const double spl = kSr * 60.0 / (bpm * 4.0);                                       // amostras por passo

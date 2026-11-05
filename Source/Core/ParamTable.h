@@ -222,7 +222,7 @@ inline constexpr int kNumDivs = 16;
     SK_ARPSTEP(X, 1) SK_ARPSTEP(X, 2) SK_ARPSTEP(X, 3) SK_ARPSTEP(X, 4) SK_ARPSTEP(X, 5) SK_ARPSTEP(X, 6) SK_ARPSTEP(X, 7) SK_ARPSTEP(X, 8) \
     SK_ARPSTEP(X, 9) SK_ARPSTEP(X, 10) SK_ARPSTEP(X, 11) SK_ARPSTEP(X, 12) SK_ARPSTEP(X, 13) SK_ARPSTEP(X, 14) SK_ARPSTEP(X, 15) SK_ARPSTEP(X, 16) \
     /* qualidade de áudio: oversampling do motor inteiro */ \
-    X(QUALITY, "quality", "Qualidade", PK_CHOICE, 0, 2, 0, "", "Normal|Alta (2x)|Máxima (4x)") \
+    X(QUALITY, "quality", "Qualidade", PK_CHOICE, 0, 3, 0, "", "Normal|Alta (2x)|Máxima (4x)|Auto (2x se preciso)") \
     /* step sequencer (fonte de modulação por voz, sincronizado ao tempo) */ \
     X(STEP_LEN, "step_len", "Step Seq Passos", PK_INT, 1, 16, 8, "", "") \
     X(STEP_DIV, "step_div", "Step Seq Divisão", PK_CHOICE, 0, 15, 12, "", SK_DIVLIST) \

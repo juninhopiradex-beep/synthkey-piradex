@@ -19,6 +19,15 @@
 
 namespace sk
 {
+// Qualidade "Auto": liga 2x só quando o patch usa dobra forte ou sync alto no motor Analógico (os casos em que o modo Normal alias de forma audível:
+// dobra 100% na nota 93 ≈ −22 dB em Normal vs −44 dB a 2x; sync 24 st na nota 93 ≈ −13 dB vs −47 dB). Histerese para não oscilar com o botão.
+inline int autoQuality (const float* p, bool currentlyOn)
+{
+    auto needs = [&] (bool on, int type, float fold, float sync) { return on && type == 0 && (currentlyOn ? (fold > 0.20f || sync >= 8.0f) : (fold > 0.30f || sync >= 12.0f)); };
+    return (needs (p[P_A_ON] > 0.5f, (int) p[P_A_TYPE], p[P_A_FOLD], p[P_A_SYNC]) || needs (p[P_B_ON] > 0.5f, (int) p[P_B_TYPE], p[P_B_FOLD], p[P_B_SYNC])) ? 1 : 0;
+}
+inline int resolveQuality (const float* p, bool currentlyOn) { const int q = (int) p[P_QUALITY]; return q >= 3 ? autoQuality (p, currentlyOn) : std::max (0, std::min (2, q)); }
+
 class Engine
 {
 public:

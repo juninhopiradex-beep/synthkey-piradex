@@ -444,6 +444,17 @@ int main()
         // C-04: FM limitada pela banda e dobra com ADAA (antes: FM −2 dB, dobra −12 dB na nota 93)
         { const float a = aliasOf (0, 0, 0, 1.0f, 4, 0, 93); CHECK (a < -40.0f, "FM nota 93: aliasing %.1f dB", a); }
         { const float a = aliasOf (0, 2, 0, 0, 2, 1.0f, 93); CHECK (a < -18.0f, "dobra nota 93: aliasing %.1f dB", a); }
+        // qualidade Auto: liga 2x só quando precisa (dobra forte / sync alto), com histerese; e a 2x esses casos ficam limpos
+        {
+            defaults(); P[P_A_ON] = 1; P[P_A_TYPE] = 0; P[P_QUALITY] = 3.0f;
+            P[P_A_FOLD] = 0.0f; P[P_A_SYNC] = 0.0f; CHECK (resolveQuality (P, false) == 0, "auto: patch limpo fica em Normal");
+            P[P_A_FOLD] = 1.0f; CHECK (resolveQuality (P, false) == 1, "auto: dobra 100%% liga 2x");
+            P[P_A_FOLD] = 0.25f; CHECK (resolveQuality (P, false) == 0 && resolveQuality (P, true) == 1, "auto: histerese da dobra");
+            P[P_A_FOLD] = 0.0f; P[P_A_SYNC] = 24.0f; CHECK (resolveQuality (P, false) == 1, "auto: sync 24 st liga 2x");
+            P[P_QUALITY] = 2.0f; CHECK (resolveQuality (P, false) == 2, "auto: 4x manual respeita-se");
+            const float aN = aliasOf (0, 2, 24, 0, 2, 0, 93), a2 = aliasOf (1, 2, 24, 0, 2, 0, 93); CHECK (a2 < aN - 25.0f && a2 < -40.0f, "sync 24 st nota 93: 2x %.1f dB vs Normal %.1f dB", a2, aN);
+            const float fN = aliasOf (0, 2, 0, 0, 2, 1.0f, 93), f2 = aliasOf (1, 2, 0, 0, 2, 1.0f, 93); CHECK (f2 < fN - 15.0f && f2 < -40.0f, "dobra 100%% nota 93: 2x %.1f dB vs Normal %.1f dB", f2, fN);
+        }
         // C-01: o destino Início do Sample tem efeito
         {
             Library lib; for (auto& d : buildPackDefs()) if (d.id == "nucleo") buildPackLibrary (d, lib);
@@ -600,8 +611,8 @@ int main()
         // duração: decay alto soa mais tempo; amortecimento alto escurece (menos agudos)
         {
             auto tailEnergy = [&] (float decay)
-            { setup (0.3f, decay, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 120); double en = 0; for (size_t i = (size_t) (1.5 * SR); i < (size_t) (2.0 * SR); ++i) en += (double) r.L[i] * r.L[i]; return en; };
-            CHECK (tailEnergy (0.9f) > 10.0 * tailEnergy (0.3f), "corda: duração não aumenta com 'Duração'");
+            { setup (0.3f, decay, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 200); double en = 0; for (size_t i = (size_t) (1.5 * SR); i < (size_t) (2.0 * SR); ++i) en += (double) r.L[i] * r.L[i]; return en; };
+            CHECK (tailEnergy (0.9f) > 10.0 * tailEnergy (0.3f), "corda: duração não aumenta com 'Duração' (a janela 1.5–2.0 s tem de caber no render)");
             auto hf = [&] (float damp)
             { setup (damp, 0.6f, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 70); double d = 0, t = 0; for (size_t i = (size_t) (0.3 * SR) + 1; i < (size_t) (0.6 * SR); ++i) { const double df = (double) r.L[i] - r.L[i - 1]; d += df * df; t += (double) r.L[i] * r.L[i]; } return d / std::max (t, 1e-12); };
             CHECK (hf (0.9f) < 0.6 * hf (0.0f), "corda: amortecimento não escurece");
