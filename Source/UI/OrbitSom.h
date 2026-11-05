@@ -94,7 +94,7 @@ public:
         Page::tick();
         orb.update(); curve.update(); rail.update(); matrix.update(); fx.update(); arp->update();
         matCard->setRight (juce::String (matrix.activeCount()) + TX (" / 16 liga\xC3\xA7\xC3\xB5" "es"));
-        const auto ty = [this] (int idx) { return juce::StringArray::fromTokens (TX (kParams[P_A_TYPE].choices), "|", "")[juce::jlimit (0, 3, (int) proc.getReal (idx))]; };
+        const auto ty = [this] (int idx) { return juce::StringArray::fromTokens (TX (kParams[P_A_TYPE].choices), "|", "")[juce::jlimit (0, 5, (int) proc.getReal (idx))]; };
         const juce::String la = TX ("A \xC2\xB7 ") + ty (P_A_TYPE), lb = TX ("B \xC2\xB7 ") + ty (P_B_TYPE);
         if (la != lastA || lb != lastB) { lastA = la; lastB = lb; tabs.setLabels ({ la, lb, TX ("SUB + RU\xC3\x8D" "DO"), "VOZES" }, { 120, 120, 104, 62 }); }
         refreshFilterVis();
@@ -112,7 +112,7 @@ private:
         auto type = [this, o] { return val (P_A_TYPE + o); };
         auto* c = bare ({ 258, 244, 350, 36 });
         C (c, P_A_TYPE + o, 100);
-        c->add (new SampleChooser (proc, E), 190, 28, 1, [=] { return type() == 2; });
+        c->add (new SampleChooser (proc, E), 190, 28, 1, [=] { return type() == 2 || type() == 4; });
         C (c, P_A_WAVE + o, 110, 1, [=] { return type() == 0; });
         C (c, P_A_WTTAB + o, 136, 1, [=] { return type() == 1; });
         c->add (new WavetableImportButton (proc, E), 44, 28, 1, [=] { return type() == 1; });
@@ -128,12 +128,15 @@ private:
         KK (P_A_PWM + o, "PWM", 1, [=] { return type() == 0 && val (P_A_WAVE + o) == 3; });
         KK (P_A_SYNC + o, "SYNC", 2, [=] { return type() == 0; }); KK (P_A_FMAMT + o, "FM", 2, [=] { return type() == 0; });
         C (s, P_A_FMRAT + o, 52, 3, [=] { return type() == 0; }, 20);
-        KK (P_A_FOLD + o, "DOBRA", 2, [=] { return type() == 0 || type() == 1; });
-        KK (P_A_WTPOS + o, "POSI\xC3\x87\xC3\x83O", 1, [=] { return type() == 1; }); KK (P_A_WARP + o, "WARP", 2, [=] { return type() == 1; });
+        KK (P_A_FOLD + o, "DOBRA", 2, [=] { return type() == 0 || type() == 1 || type() == 5; });
+        KK (P_A_WTPOS + o, "POSI\xC3\x87\xC3\x83O", 1, [=] { return type() == 1 || type() == 5; }); KK (P_A_WARP + o, "WARP", 2, [=] { return type() == 1 || type() == 5; });
         KK (P_A_START + o, "IN\xC3\x8DICIO", 2, [=] { return type() == 2; });
         T (s, P_A_LOOP + o, "LOOP", 62, 2, [=] { return type() == 2; }, 18); T (s, P_A_REV + o, "REV", 60, 2, [=] { return type() == 2; }, 18);
         T (s, P_A_RR + o, "RR", 56, 3, [=] { return type() == 2; }, 18); T (s, P_A_TRACK + o, "TECLA", 64, 3, [=] { return type() == 2; }, 18);
         KK (P_A_PHASE + o, "FASE", 3, [=] { return type() == 0 || type() == 1; });
+        { const int g = E ? P_B_GR_SIZE : P_A_GR_SIZE, sp = E ? P_B_SP_TILT : P_A_SP_TILT; auto gr = [=] { return type() == 4; }, spc = [=] { return type() == 5; };
+          KK (g, "TAMANHO", 1, gr); KK (g + 1, "DENSID.", 1, gr); KK (g + 2, "POSI\xC3\x87\xC3\x83O", 1, gr); KK (g + 3, "ALEAT\xC3\x93R.", 1, gr); KK (g + 4, "ALTURA\xC2\xB1", 2, gr); KK (g + 5, "VELOC.", 2, gr); KK (g + 6, "ESPALHAR", 2, gr);
+          KK (sp, "INCLIN.", 1, spc); KK (sp + 1, "FORMANTE", 1, spc); KK (sp + 2, "NITIDEZ", 1, spc); KK (sp + 3, "PENTE", 2, spc); KK (sp + 4, "PAR/\xC3\x8DMP.", 2, spc); KK (sp + 5, "VARRER", 2, spc); KK (sp + 6, "DISPERS.", 3, spc); }
     }
     void buildSubNoise()
     {

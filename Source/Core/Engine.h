@@ -13,6 +13,7 @@
 #include "ParamTable.h"
 #include "Dsp.h"
 #include "Wavetables.h"
+#include "Spectral.h"
 #include "Fx.h"
 #include "Samples.h"
 
@@ -153,6 +154,7 @@ public:
     void renderCore (float* L, float* R, int n)
     {
         n = std::min (n, maxN); loopSeen = false;
+        updateSpectral();
         std::fill (busL.begin(), busL.begin() + n, 0.0f); std::fill (busR.begin(), busR.begin() + n, 0.0f);
         std::fill (vsL.begin(), vsL.begin() + n, 0.0f); std::fill (vsR.begin(), vsR.begin() + n, 0.0f);
         int pos = 0;
@@ -239,6 +241,9 @@ private:
         bool startDone[2] = { false, false };                  // ponto de arranque do sample já aplicado (MD_START)
         double sp[2][kMaxUni] = {};
         float ksLp[2] = {}; int ksW[2] = {};                    // motor Corda: filtro de perdas e posição de escrita
+        struct Grain { double pos = 0; float step = 1, pan = 0; int age = 0, len = 0; bool on = false; };
+        static constexpr int kMaxGrains = 12;
+        Grain gr[2][kMaxGrains]; float grAcc[2] = {}; double grHead[2] = {}; Rng grRng[2];   // motor Granular
         const Zone* zone[2] = { nullptr, nullptr };
         const SampleData* sd[2] = { nullptr, nullptr };
         const Instrument* instr[2] = { nullptr, nullptr };
@@ -250,6 +255,7 @@ private:
     double hostPpq = 0, renderPpq = 0, subPpq = 0; bool hostPlaying = false;
     std::atomic<float> loopPh { 0.0f }, loopSrc { 0.0f }; std::atomic<bool> loopSt { false }; bool loopSeen = false;
     UserWavetable userWt;
+    SpectralBank spBank[2];
     const float* prm = nullptr; const Wavetables* wt = nullptr; const Library* lib = nullptr;
     Voice voices[kMaxVoices];
     std::vector<float> ksBuf;                                // kMaxVoices*2 linhas de atraso (Karplus-Strong)
@@ -318,7 +324,10 @@ private:
             v.ph2[E][u] = 0; v.pm[E][u] = 0; v.sp[E][u] = 0; v.syncD[E][u] = 0; v.fprev[E][u] = 1.0e9f;
         }
         v.zone[E] = nullptr; v.sd[E] = nullptr; v.instr[E] = nullptr; v.startDone[E] = false;
-        if (pe[P_A_ON] < 0.5f || (int) pe[P_A_TYPE] != 2 || ! lib || lib->inst.empty()) return;
+        for (auto& g : v.gr[E]) g.on = false;
+        v.grAcc[E] = 1.0e9f; v.grHead[E] = 0.0; v.grRng[E].seed (0x51ED270Bu ^ ((uint32_t) v.note * 2654435761u) ^ ((uint32_t) E * 40503u));
+        const int tyI = (int) pe[P_A_TYPE];
+        if (pe[P_A_ON] < 0.5f || (tyI != 2 && tyI != 4) || ! lib || lib->inst.empty()) return;
         const int ii = std::max (0, std::min ((int) lib->inst.size() - 1, (int) pe[P_A_SMP]));
         const Instrument& I = lib->inst[(size_t) ii];
         const int vel127 = std::max (1, std::min (127, (int) std::lround (v.vel * 127.0f)));
@@ -543,7 +552,7 @@ private:
     {
         const float* pe = prm + (E ? (P_B_ON - P_A_ON) : 0);
         const int type = (int) pe[P_A_TYPE];
-        const int uni = type == 3 ? 1 : std::max (1, std::min (kMaxUni, (int) pe[P_A_UNI]));
+        const int uni = (type == 3 || type == 4) ? 1 : std::max (1, std::min (kMaxUni, (int) pe[P_A_UNI]));
         const bool track = pe[P_A_TRACK] > 0.5f;
         { const int klo = (int) prm[E ? P_B_KEYLO : P_A_KEYLO], khi = (int) prm[E ? P_B_KEYHI : P_A_KEYHI]; if (v.note < klo || v.note > khi) return; }   // split / layer
         const float levDb = pe[P_A_LEVEL]; if (levDb <= -59.9f) return;
@@ -552,7 +561,7 @@ private:
         const float pitchMod = dst[E ? MD_PITCH_B : MD_PITCH_A];
         float keyNote = track ? v.curNote : 60.0f;
         const Zone* zone = v.zone[E];
-        if (type == 2) { if (! zone) return; if (v.instr[E] && v.instr[E]->fixedPitch) keyNote = (float) zone->root; else if (! track) keyNote = (float) zone->root; }
+        if (type == 2 || type == 4) { if (! zone) return; if (v.instr[E] && v.instr[E]->fixedPitch) keyNote = (float) zone->root; else if (! track) keyNote = (float) zone->root; }
         const float note = keyNote + common + pe[P_A_COARSE] + pe[P_A_FINE] * 0.01f + pitchMod;
         const float freq = midiToHz (note);
         const float det = clampf (pe[P_A_UNIDET] + dst[E ? MD_UNIDET_B : MD_UNIDET_A], 0.0f, 100.0f), spread = pe[P_A_UNISPR], panE = clampf (pe[P_A_PAN] + 0.0f, -1.0f, 1.0f);
@@ -567,6 +576,7 @@ private:
         }
         float tmp[kSub];
         if (type == 3) { renderString (v, E, m, pe, freq, gL[0], gR[0], oL, oR); return; }
+        if (type == 4) { renderGranular (v, E, m, note, gL[0], gR[0], oL, oR, dst); return; }
         if (type == 2)
         {
             renderSample (v, E, m, pe, note, ratio, gL, gR, uni, oL, oR, dst);
@@ -621,7 +631,8 @@ private:
         const float pos = pe[P_A_WTPOS] + dst[E ? MD_WTPOS_B : MD_WTPOS_A], warp = clampf (pe[P_A_WARP] + dst[E ? MD_WARP_B : MD_WARP_A], -1.0f, 1.0f);
         int f0, f1; float fr; Wavetables::framePos (pos, f0, f1, fr);
         const float *c0, *c1;
-        if (tabI >= Wavetables::kUserTable && userWt.loaded()) { c0 = userWt.cycle (f0, mip); c1 = userWt.cycle (f1, mip); }
+        if (type == 5) { if (! spBank[E].ready()) return; c0 = spBank[E].cycle (f0, mip); c1 = spBank[E].cycle (f1, mip); }
+        else if (tabI >= Wavetables::kUserTable && userWt.loaded()) { c0 = userWt.cycle (f0, mip); c1 = userWt.cycle (f1, mip); }
         else { const int tb = std::min (tabI, Wavetables::kTables - 1); c0 = wt->cycle (tb, f0, mip); c1 = wt->cycle (tb, f1, mip); }
         for (int u = 0; u < uni; ++u)
         {
@@ -642,6 +653,71 @@ private:
             for (int i = 0; i < m; ++i) { oL[i] += tmp[i] * gL[u]; oR[i] += tmp[i] * gR[u]; }
         }
     }
+
+    // ---- motor Espectral: reconstrução incremental da tabela quando os controlos mudam ----
+    SpectralParams spectralParams (int E) const
+    {
+        const int o = E ? (P_B_SP_TILT - P_A_SP_TILT) : 0;
+        SpectralParams sp; sp.tilt = prm[P_A_SP_TILT + o]; sp.form = prm[P_A_SP_FORM + o]; sp.fq = prm[P_A_SP_FQ + o]; sp.comb = prm[P_A_SP_COMB + o];
+        sp.odd = prm[P_A_SP_ODD + o]; sp.sweep = prm[P_A_SP_SWEEP + o]; sp.smear = prm[P_A_SP_SMEAR + o]; return sp;
+    }
+    void updateSpectral()
+    {
+        for (int E = 0; E < 2; ++E)
+        {
+            const float* pe = prm + (E ? (P_B_ON - P_A_ON) : 0);
+            if (pe[P_A_ON] > 0.5f && (int) pe[P_A_TYPE] == 5) spBank[E].update (spectralParams (E), 2);
+        }
+    }
+    void rebuildSpectralNow() { for (int E = 0; E < 2; ++E) spBank[E].rebuildNow (spectralParams (E)); }   // offline / testes
+
+    // ---- motor Granular: nuvem de grãos lidos do sample do voz (janela de Hann, posição/altura/pan aleatórios) ----
+    void renderGranular (Voice& v, int E, int m, float note, float gL0, float gR0, float* oL, float* oR, const float* dst)
+    {
+        const Zone* z = v.zone[E]; const SampleData* sd = v.sd[E]; if (! z || ! sd || z->loopBeats > 0.0f) return;
+        const int len = sd->frames(); if (len < 64) return;
+        const int o = E ? (P_B_GR_SIZE - P_A_GR_SIZE) : 0;
+        const float sizeMs = prm[P_A_GR_SIZE + o], dens = prm[P_A_GR_DENS + o], rnd = prm[P_A_GR_RAND + o], pj = prm[P_A_GR_PJIT + o];
+        const float speed = prm[P_A_GR_SPEED + o], spread = prm[P_A_GR_SPREAD + o];
+        const float posP = clampf (prm[P_A_GR_POS + o] + dst[E ? MD_START_B : MD_START_A], 0.0f, 1.0f);
+        const float baseStep = std::exp2 ((note - (float) z->root) / 12.0f) * (sd->sampleRate / sr);
+        const int glen = std::max (32, (int) (sizeMs * 0.001f * sr));
+        const float interval = std::max (1.0f, sr / dens);
+        const float overlap = std::max (1.0f, dens * sizeMs * 0.001f);
+        const float norm = 0.9f * zgain (z) / std::sqrt (overlap);
+        const double headInc = (double) speed * (double) (sd->sampleRate / sr);
+        auto& G = v.gr[E];
+        for (int i = 0; i < m; ++i)
+        {
+            v.grAcc[E] += 1.0f;
+            if (v.grAcc[E] >= interval)
+            {
+                v.grAcc[E] = v.grAcc[E] >= 1.0e8f ? 0.0f : v.grAcc[E] - interval;
+                for (auto& g : G) if (! g.on)
+                {
+                    double head = (double) posP * (double) len + v.grHead[E]; head -= std::floor (head / (double) len) * (double) len;
+                    double st = head + (double) (rnd * v.grRng[E].bi() * 0.5f) * (double) len;
+                    st = std::max (0.0, std::min ((double) (len - 4), st - std::floor (st / (double) len) * (double) len));
+                    g.pos = st; g.step = baseStep * std::exp2 (pj * 4.0f * v.grRng[E].bi() / 12.0f); g.pan = spread * v.grRng[E].bi();
+                    g.age = 0; g.len = glen; g.on = true; break;
+                }
+            }
+            float l = 0.0f, r = 0.0f;
+            for (auto& g : G)
+            {
+                if (! g.on) continue;
+                if (g.pos >= (double) (len - 2) || g.age >= g.len) { g.on = false; continue; }
+                const float w = 0.5f - 0.5f * std::cos (2.0f * kPi * (float) g.age / (float) g.len);
+                float s = readHermite (sd->l, g.pos); if (sd->stereo()) s = 0.5f * (s + readHermite (sd->r, g.pos));
+                s *= w;
+                l += s * std::cos ((g.pan + 1.0f) * 0.25f * kPi) * 1.41421356f; r += s * std::sin ((g.pan + 1.0f) * 0.25f * kPi) * 1.41421356f;
+                g.pos += (double) g.step; ++g.age;
+            }
+            oL[i] += l * gL0 * norm; oR[i] += r * gR0 * norm;
+            v.grHead[E] += headInc;
+        }
+    }
+    static float zgain (const Zone* z) { return z->gain; }
 
     // ---- motor Corda: Karplus-Strong estendido (linha de atraso + perdas passa-baixo), excitado no início da nota ----
     void renderString (Voice& v, int E, int m, const float* pe, float freq, float gL, float gR, float* oL, float* oR)

@@ -638,6 +638,85 @@ int main()
         morphParams (a, b, 0.51f, o); CHECK (o[P_A_WAVE] == 2, "morph discreto depois do meio");
     }
 
+    // ---------------------------------------------------------------- [16] motor Granular
+    {
+        std::printf ("[16] motor Granular\n");
+        Library lib; for (auto& d : buildPackDefs()) if (d.id == "nucleo") buildPackLibrary (d, lib);
+        const int ep = lib.indexOf ("nucleo.ep"), pad = lib.indexOf ("nucleo.pad");
+        CHECK (ep >= 0 && pad >= 0, "granular: instrumentos do núcleo em falta");
+        auto setup = [&] (int inst, float size, float dens, float rnd, float pj, float speed)
+        {
+            defaults(); P[P_LIM_ON] = 0; P[P_A_ON] = 1; P[P_A_TYPE] = 4; P[P_A_SMP] = (float) inst; P[P_A_LEVEL] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 9000; P[P_AMP_R] = 200; P[P_F1_TYPE] = 0;
+            P[P_A_GR_SIZE] = size; P[P_A_GR_DENS] = dens; P[P_A_GR_RAND] = rnd; P[P_A_GR_PJIT] = pj; P[P_A_GR_SPEED] = speed; P[P_A_GR_POS] = 0.1f;
+        };
+        auto go = [&] (int note, int blocks, bool second = false) { Engine e; e.prepare (SR, 512); e.setParams (P); e.setLibrary (&lib); e.noteOn (note, 1.0f); if (second) e.noteOn (note + 7, 1.0f); return run (e, blocks); };
+        // soa, é finito e determinístico
+        setup (ep, 120, 40, 0.0f, 0.0f, 0.0f); auto r1 = go (60, 30), r2 = go (60, 30);
+        CHECK (finite (r1.L) && rmsOf (r1.L, 4000) > 0.005, "granular: sem som (rms %.5f)", rmsOf (r1.L, 4000));
+        CHECK (r1.L == r2.L && r1.R == r2.R, "granular: não determinístico");
+        // acompanha a altura (oitava acima ≈ 2x), com grãos longos e sem variação
+        {
+            setup (ep, 200, 30, 0.0f, 0.0f, 0.0f); auto a = go (60, 40), b = go (72, 40);
+            const float fa = measureFreq (a.L, 8000, 8192, midiToHz (60), SR), fb = measureFreq (b.L, 8000, 8192, midiToHz (72), SR);
+            CHECK (std::fabs (1200.0 * std::log2 ((double) fb / (double) fa) - 1200.0) < 60.0, "granular: oitava %.1f cents", 1200.0 * std::log2 ((double) fb / (double) fa));
+        }
+        // mais densidade/tamanho = mais grãos sobrepostos mas nível normalizado (±6 dB)
+        { setup (pad, 60, 10, 0.5f, 0.0f, 0.5f); auto a = go (60, 40); setup (pad, 60, 100, 0.5f, 0.0f, 0.5f); auto b = go (60, 40);
+          const double ra = rmsOf (a.L, 6000), rb = rmsOf (b.L, 6000); CHECK (ra > 1e-4 && rb > 1e-4 && std::fabs (20.0 * std::log10 (rb / ra)) < 9.0, "granular: nível não normalizado (%.1f dB)", 20.0 * std::log10 (rb / ra)); }
+        // estéreo: o espalhamento abre a imagem
+        { setup (pad, 80, 40, 0.5f, 0.0f, 0.5f); P[P_A_GR_SPREAD] = 0.0f; auto a = go (60, 40); P[P_A_GR_SPREAD] = 1.0f; auto b = go (60, 40);
+          auto diff = [&] (const Rendered& r) { double d = 0; for (size_t i = 6000; i < r.L.size(); ++i) d += std::fabs ((double) r.L[i] - r.R[i]); return d; }; CHECK (diff (b) > 5.0 * diff (a) + 1e-6, "granular: espalhar não abre estéreo"); }
+        // extremos, muitas vozes e sem sample: estável / silencioso
+        { setup (pad, 5, 120, 1.0f, 1.0f, 2.0f); Engine e; e.prepare (SR, 512); e.setParams (P); e.setLibrary (&lib); for (int n = 24; n < 100; n += 2) e.noteOn (n, 1.0f); auto r = run (e, 60);
+          CHECK (finite (r.L) && peak (r.L) < 40.0f, "granular: instável (pico %.1f)", (double) peak (r.L)); for (int n = 24; n < 100; n += 2) e.noteOff (n); run (e, 120); CHECK (e.activeVoices() == 0, "granular: vozes não libertam"); }
+        { setup (ep, 80, 30, 0, 0, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 10); CHECK (finite (r.L) && peak (r.L) < 1e-9f, "granular sem biblioteca devia calar"); }
+    }
+
+    // ---------------------------------------------------------------- [17] motor Espectral
+    {
+        std::printf ("[17] motor Espectral\n");
+        auto setup = [&] (float tilt, float form, float fq, float comb, float odd, float sweep)
+        {
+            defaults(); P[P_LIM_ON] = 0; P[P_A_ON] = 1; P[P_A_TYPE] = 5; P[P_A_LEVEL] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 9000; P[P_AMP_R] = 200; P[P_F1_TYPE] = 0;
+            P[P_A_SP_TILT] = tilt; P[P_A_SP_FORM] = form; P[P_A_SP_FQ] = fq; P[P_A_SP_COMB] = comb; P[P_A_SP_ODD] = odd; P[P_A_SP_SWEEP] = sweep; P[P_A_WTPOS] = 0.0f;
+        };
+        auto go = [&] (int note, int blocks) { Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (note, 1.0f); return run (e, blocks); };
+        auto amp = [&] (const std::vector<float>& x, size_t a, size_t n, double f) { double re = 0, im = 0; for (size_t i = 0; i < n; ++i) { const double ph = 6.283185307179586 * f * (double) i / (double) SR; re += x[a + i] * std::cos (ph); im += x[a + i] * std::sin (ph); } return std::sqrt (re * re + im * im) / (double) n; };
+        setup (1.0f, 8.0f, 0.4f, 0, 0, 0.5f); auto base = go (57, 30);
+        CHECK (finite (base.L) && rmsOf (base.L, 6000) > 0.01, "espectral: sem som (rms %.5f)", rmsOf (base.L, 6000));
+        // afinação
+        for (int note : { 36, 48, 60, 72, 84 })
+        { setup (1.0f, 8.0f, 0.4f, 0, 0, 0.5f); auto r = go (note, 40); const double f0 = midiToHz ((float) note); const float f = measureFreq (r.L, 8000, 8192, (float) f0, SR);
+          CHECK (std::fabs (1200.0 * std::log2 ((double) f / f0)) < 5.0, "espectral: afinação nota %d = %.1f cents", note, 1200.0 * std::log2 ((double) f / f0)); }
+        // par/ímpar: com 'odd'=1 o 2.º harmónico desaparece e o 3.º fica
+        { setup (0.5f, 8.0f, 0.1f, 0, 1.0f, 0.0f); auto r = go (45, 40); const double f0 = (double) midiToHz (45);
+          const double a1 = amp (r.L, 8000, 16384, f0), a2 = amp (r.L, 8000, 16384, 2 * f0), a3 = amp (r.L, 8000, 16384, 3 * f0);
+          CHECK (a2 < 0.05 * a1 && a3 > 0.1 * a1, "espectral: par/ímpar (h1 %.4f h2 %.4f h3 %.4f)", a1, a2, a3); }
+        // inclinação: tilt alto é mais escuro
+        { auto hf = [&] (float tilt) { setup (tilt, 8.0f, 0.1f, 0, 0, 0.0f); auto r = go (48, 40); const double f0 = (double) midiToHz (48); double h = 0, t = 0; for (int k = 1; k <= 24; ++k) { const double a = amp (r.L, 8000, 16384, k * f0); t += a * a; if (k >= 6) h += a * a; } return h / t; };
+          CHECK (hf (2.2f) < 0.3 * hf (0.3f), "espectral: tilt não escurece"); }
+        // formante: mais alto = mais brilhante
+        { auto cen = [&] (float form) { setup (1.0f, form, 0.7f, 0, 0, 0.0f); auto r = go (48, 40); const double f0 = (double) midiToHz (48); double n = 0, d = 0; for (int k = 1; k <= 40; ++k) { const double a = amp (r.L, 8000, 16384, k * f0); n += k * a * a; d += a * a; } return n / d; };
+          CHECK (cen (20.0f) > 1.5 * cen (3.0f), "espectral: formante não desloca o centro (%.2f vs %.2f)", cen (20.0f), cen (3.0f)); }
+        // a posição varre o espectro (frame 0 != frame 31)
+        { setup (1.0f, 3.0f, 0.7f, 0, 0, 1.0f); P[P_A_WTPOS] = 0.0f; auto a = go (48, 40); P[P_A_WTPOS] = 1.0f; auto b = go (48, 40);
+          const double f0 = (double) midiToHz (48); auto h8 = [&] (const Rendered& r) { return amp (r.L, 8000, 16384, 40 * f0) / (amp (r.L, 8000, 16384, f0) + 1e-9); };
+          CHECK (h8 (b) > 3.0 * h8 (a), "espectral: posição não varre o espectro"); }
+        // sem aliasing nas notas agudas (mips band-limited)
+        { setup (0.3f, 40.0f, 0.2f, 0, 0, 0.0f); auto r = go (96, 60); const float al = aliasDb (r.L, 12000, midiToHz (96), SR); CHECK (al < -60.0f, "espectral: aliasing %.1f dB", (double) al); }
+        // reconstrução incremental: mudar um controlo a tocar nunca dá NaN e acaba por mudar o som
+        { setup (1.0f, 6.0f, 0.4f, 0, 0, 0.5f); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (48, 1.0f); auto r1 = run (e, 20);
+          P[P_A_SP_FORM] = 30.0f; P[P_A_SP_COMB] = 0.6f; auto r2 = run (e, 40);
+          CHECK (finite (r1.L) && finite (r2.L) && peak (r2.L) < 4.0f, "espectral: instável ao mudar parâmetros a tocar"); 
+          double ea = 0, eb = 0; for (size_t i = 8000; i < 16000; ++i) ea += (double) r1.L[i] * r1.L[i]; for (size_t i = r2.L.size() - 8000; i < r2.L.size(); ++i) eb += (double) r2.L[i] * r2.L[i];
+          CHECK (std::fabs (ea - eb) / std::max (ea, 1e-9) > 0.02, "espectral: mudança de parâmetros não chegou ao som"); }
+        // muitas vozes e extremos
+        { setup (0.0f, 64.0f, 1.0f, 1.0f, -1.0f, 1.0f); Engine e; e.prepare (SR, 512); e.setParams (P); for (int n = 20; n < 100; n += 2) e.noteOn (n, 1.0f); auto r = run (e, 60);
+          CHECK (finite (r.L) && peak (r.L) < 60.0f, "espectral: instável com muitas vozes (pico %.1f)", (double) peak (r.L)); }
+        // oversampling
+        { setup (1.0f, 8.0f, 0.4f, 0, 0, 0.5f); Engine e; e.setQuality (2); e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 30); CHECK (finite (r.L) && rmsOf (r.L, 8000) > 0.01, "espectral: q2 sem som"); }
+    }
+
     std::printf ("\n%d verificações, %d falhas\n", checks, failures);
     return failures ? 1 : 0;
 }

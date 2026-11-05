@@ -45,7 +45,7 @@ public:
         addAndMakeVisible (packBox); addAndMakeVisible (catBox); addAndMakeVisible (engBox); addAndMakeVisible (qaBox); addAndMakeVisible (list); addAndMakeVisible (closeBtn);
         closeBtn.setButtonText (TX ("\xE2\x9C\x95")); closeBtn.onClick = [this] { close(); };
         packBox.onChange = [this] { rebuild(); }; catBox.onChange = [this] { rebuild(); };
-        engBox.addItem (TX ("Todos os motores"), 1); engBox.addItem (TX ("Anal\xC3\xB3gico"), 2); engBox.addItem ("Wavetable", 3); engBox.addItem ("Sample", 4); engBox.addItem (TX ("H\xC3\xADbrido"), 5); engBox.addItem (TX ("F\xC3\xADsico (Corda)"), 6); engBox.addItem (TX ("M\xC3\xB3" "dulos"), 7);
+        engBox.addItem (TX ("Todos os motores"), 1); engBox.addItem (TX ("Anal\xC3\xB3gico"), 2); engBox.addItem ("Wavetable", 3); engBox.addItem ("Sample", 4); engBox.addItem (TX ("H\xC3\xADbrido"), 5); engBox.addItem (TX ("F\xC3\xADsico (Corda)"), 6); engBox.addItem (TX ("M\xC3\xB3" "dulos"), 7); engBox.addItem ("Granular", 8); engBox.addItem ("Espectral", 9);
         engBox.setSelectedId (1, juce::dontSendNotification); engBox.onChange = [this] { rebuild(); };
         qaBox.addItem (TX ("Qualquer valida\xC3\xA7\xC3\xA3o"), 1); qaBox.addItem (TX ("Ouvidos / lan\xC3\xA7" "ados"), 2); qaBox.addItem (TX ("S\xC3\xB3 valida\xC3\xA7\xC3\xA3o t\xC3\xA9" "cnica"), 3);
         qaBox.setSelectedId (1, juce::dontSendNotification); qaBox.onChange = [this] { rebuild(); };
@@ -125,12 +125,14 @@ private:
         }
         list.updateContent(); list.repaint(); repaint();
     }
-    // motor do preset (2 analógico, 3 wavetable, 4 sample, 5 híbrido, 6 físico, 7 módulo) — deriva dos parâmetros nos presets antigos
+    // motor do preset (2 analógico, 3 wavetable, 4 sample, 5 híbrido, 6 físico, 7 módulo, 8 granular, 9 espectral) — deriva dos parâmetros nos presets antigos
     static int engineKey (const Preset& p)
     {
         if (! p.module.empty()) return 7;
         const int ta = (int) p.get (P_A_TYPE), tb = (int) p.get (P_B_TYPE); const bool bOn = p.get (P_B_ON) > 0.5f;
         if (ta == 3 || (bOn && tb == 3)) return 6;
+        if (ta == 4 || (bOn && tb == 4)) return 8;
+        if (ta == 5 || (bOn && tb == 5)) return 9;
         if (bOn && tb != ta) return 5;
         return ta == 1 ? 3 : (ta == 2 ? 4 : 2);
     }

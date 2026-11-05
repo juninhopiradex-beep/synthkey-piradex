@@ -5,6 +5,7 @@
 //    packgen packs  <pasta_saída> <pasta_capas> <segredo_hex | -> [id_do_pack ...]
 //    packgen gains  <ficheiro_saída.h>                      (calibra os presets do Núcleo)
 //    packgen presets <pasta_saída>                          (exporta todos os presets em .skpreset, p/ inspeção)
+//    packgen curate <GenCurated.h> [eps]                    (gera e cura as variações de presets: mede, rejeita iguais, calibra)
 // =============================================================================
 #include "Core/PackIO.h"
 #include "Core/PresetBuilder.h"
@@ -13,8 +14,13 @@
  #include "Secrets.h"
  #define SK_HAVE_SECRETS 1
 #endif
+#include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <fstream>
+#include <map>
+#include <set>
+#include <thread>
 #include <iostream>
 #include <sstream>
 #if __has_include(<filesystem>)
@@ -38,6 +44,71 @@ static std::string secretFromHeader()
 
 static Library nucleoLib (const std::vector<PackDef>& defs) { Library l; for (auto& d : defs) if (d.core) buildPackLibrary (d, l); return l; }
 
+
+// ------------------------------------------------------------------------------------------------
+//  curate: para cada grupo (família do Núcleo | pack de expansão) gera variações das bases, mede cada
+//  uma, rejeita as que soam a menos de `eps` de qualquer preset já aceite e guarda código + ganho.
+// ------------------------------------------------------------------------------------------------
+static int runCurate (const std::string& outPath, float eps, const std::vector<PackDef>& defs, const Library& nuc)
+{
+    using namespace sk::presets;
+    struct Q { const char* key; int target; };
+    static const Q famQ[] = { { "Bass", 180 }, { "Leads", 150 }, { "Pads", 150 }, { "Keys", 140 }, { "Plucks", 130 }, { "Synths", 120 }, { "Strings", 90 }, { "Brass", 70 }, { "Bells", 80 },
+        { "Mallets", 60 }, { "Guitars", 80 }, { "Vocals", 70 }, { "Organs", 45 }, { "Woodwinds", 40 }, { "Drums", 100 }, { "Percussion", 80 }, { "Arpeggios", 100 }, { "Sequences", 90 },
+        { "Chords", 65 }, { "Textures", 80 }, { "SFX", 80 }, { "Cinematic", 65 }, { "Hybrid", 55 }, { "Experimental", 30 } };
+    static const Q packQ[] = { { "amapiano", 150 }, { "kizomba", 120 }, { "afrobeat", 140 }, { "kuduro", 110 }, { "rnb", 130 }, { "trap", 130 }, { "drill", 100 },
+        { "house", 130 }, { "edm", 120 }, { "pop", 100 }, { "cinematic", 100 } };
+    struct Row { std::string pack, base; uint32_t code; int dup; float gain; };
+    std::vector<Row> rowsOut; std::set<std::string> names;
+    const unsigned nth = std::max (1u, std::thread::hardware_concurrency());
+    auto famOf = [] (const Preset& p) { return p.family.empty() ? familyForCategory (p.category) : p.family; };
+
+    // nomes já usados por presets escritos à mão em TODOS os packs
+    for (auto& d : defs) for (auto& p : forPackHand (d.id)) names.insert (p.name);
+
+    auto runGroup = [&] (const std::string& packId, const std::string& groupKey, int target, const std::vector<Preset>& handAll, const Library& lib)
+    {
+        std::vector<const Preset*> hand; for (auto& p : handAll) if (packId != "nucleo" || famOf (p) == groupKey) hand.push_back (&p);
+        // todos os presets da mesma família/pack contam para a quota; a base de variações é o mesmo conjunto
+        std::vector<Fingerprint> fps; fps.reserve ((size_t) target + 64);
+        for (auto* p : hand) { Preset q = *p; Fingerprint f; measure (q, lib, &f); if (f.ok) fps.push_back (f); }
+        int need = target - (int) hand.size(); int got = 0; std::set<std::pair<std::string, uint32_t>> seen;
+        std::vector<const Preset*> bases = hand; std::sort (bases.begin(), bases.end(), [] (const Preset* a, const Preset* b) { return gen::hashStr (a->name) < gen::hashStr (b->name); });
+        for (uint32_t round = 0; round < 60 && got < need; ++round)
+        {
+            struct Cand { const Preset* base; uint32_t code; Preset p; Fingerprint f; };
+            std::vector<Cand> cands;
+            for (auto* b : bases) { const uint32_t code = gen::candidateCode (*b, round); if (code == 0 || seen.count ({ b->name, code })) continue; seen.insert ({ b->name, code }); cands.push_back ({ b, code, gen::derive (*b, code), {} }); }
+            std::atomic<size_t> next { 0 }; std::vector<std::thread> th;
+            for (unsigned t = 0; t < nth; ++t) th.emplace_back ([&] { for (size_t i; (i = next++) < cands.size();) measure (cands[i].p, lib, &cands[i].f); });
+            for (auto& t : th) t.join();
+            for (auto& c : cands)
+            {
+                if (got >= need) break; if (! c.f.ok) continue;
+                bool far = true; for (auto& f : fps) if (fpDistance (f, c.f) < eps) { far = false; break; }
+                if (! far) continue;
+                const float gain = c.p.get (P_MASTER_VOL); if (gain <= -23.9f || gain >= 5.9f) continue;       // nível fora da faixa calibrável
+                int dup = 0; std::string nm = c.p.name; while (names.count (nm)) { ++dup; nm = c.p.name + " " + std::to_string (dup + 1); }
+                names.insert (nm); fps.push_back (c.f); rowsOut.push_back ({ packId, c.base->name, c.code, dup, gain }); ++got;
+            }
+        }
+        std::printf ("  %-12s %-13s quota %3d  à mão %3zu  geradas %3d  %s\n", packId.c_str(), groupKey.c_str(), target, hand.size(), got, got < need ? "(FALTAM)" : "");
+        std::fflush (stdout);
+    };
+
+    { const auto hand = forPackHand ("nucleo"); for (auto& q : famQ) runGroup ("nucleo", q.key, q.target, hand, nuc); }
+    for (auto& q : packQ)
+    {
+        const PackDef* d = nullptr; for (auto& x : defs) if (x.id == q.key) d = &x; if (! d) continue;
+        Library lib; lib.appendShared (nuc); buildPackLibrary (*d, lib);
+        runGroup (d->id, d->id, q.target, forPackHand (d->id), lib);
+    }
+    std::string out = "// GERADO por tools/packgen (modo curate) — variações curadas de presets: base + código de variação + ganho calibrado.\n// Estado de validação: \"auto\" (medido e filtrado por máquina; nunca ouvido).\n#pragma once\n#include <cstddef>\n#include <cstdint>\nnamespace sk { namespace presets\n{\nstruct GenRow { const char* pack; const char* base; uint32_t code; uint8_t dup; float gain; };\ninline const GenRow kGenCurated[] =\n{\n";
+    for (auto& r : rowsOut) { char b[400]; std::snprintf (b, sizeof b, "    { \"%s\", \"%s\", 0x%xu, %d, %.2ff },\n", r.pack.c_str(), r.base.c_str(), r.code, r.dup, (double) r.gain); out += b; }
+    out += "    { \"\", \"\", 0, 0, 0.0f }\n};\ninline constexpr size_t kGenCuratedN = " + std::to_string (rowsOut.size()) + ";\n}} // namespace sk::presets\n";
+    spit (outPath, out); std::printf ("%zu variações curadas em %s\n", rowsOut.size(), outPath.c_str()); return 0;
+}
+
 int main (int argc, char** argv)
 {
     if (argc < 3) { std::fprintf (stderr, "uso: packgen packs|gains|presets ...\n"); return 2; }
@@ -45,9 +116,10 @@ int main (int argc, char** argv)
     const auto defs = buildPackDefs();
     const Library nuc = nucleoLib (defs);
 
+    if (mode == "curate") return runCurate (argv[2], argc > 3 ? (float) std::atof (argv[3]) : 0.6f, defs, nuc);
     if (mode == "gains")
     {
-        auto list = presets::forPack ("nucleo");
+        auto list = presets::forPackHand ("nucleo");
         std::string out = "// GERADO por tools/packgen (modo gains) — ganhos calibrados dos presets do Núcleo\n#pragma once\n#include <utility>\nnamespace sk { namespace presets\n{\ninline const std::pair<const char*, float> kNucleoGains[] =\n{\n";
         for (auto& p : list) { presets::calibrate (p, nuc); char b[200]; std::snprintf (b, sizeof b, "    { \"%s\", %.2ff },\n", p.name.c_str(), p.get (P_MASTER_VOL)); out += b; }
         out += "};\n}} // namespace sk::presets\n";

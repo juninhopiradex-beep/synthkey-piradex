@@ -8,11 +8,14 @@
 // =============================================================================
 #pragma once
 #include "Preset.h"
+#include "GenAxes.h"
+#include "GenCurated.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace sk { namespace presets
@@ -329,6 +332,7 @@ inline std::vector<Preset> kuduro()
 #include "PresetsMore.inc"
 #include "PresetsKits.inc"
 #include "PresetsFamilies.inc"
+#include "PresetsGenBases.inc"
 #include "PresetsModules.inc"
 
 inline std::vector<Preset> forPackBase (const std::string& id)
@@ -344,12 +348,34 @@ inline std::vector<Preset> forPackBase (const std::string& id)
     if (id == "kuduro") return cat (kuduro(), kuduroMore());
     return {};
 }
-inline std::vector<Preset> forPack (const std::string& id)
+// presets escritos à mão (bases)
+inline std::vector<Preset> forPackHand (const std::string& id)
 {
     auto v = forPackBase (id);
     for (auto* more : { &kitVariants, &extrasMore })
     { auto x = (*more) (id); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
-    if (id == "nucleo") { auto x = familiesNucleo(); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
+    if (id == "nucleo") for (auto x : { familiesNucleo(), genBasesNucleo() }) v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end()));
+    else { auto x = genBasesPack (id); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
+    return v;
+}
+
+// variações curadas (GenCurated.h, gerado por `packgen curate`): base + código → preset, com o ganho já calibrado
+inline std::vector<Preset> generatedFor (const std::string& id, const std::vector<Preset>& hand)
+{
+    std::vector<Preset> out; std::unordered_map<std::string, size_t> byName; for (size_t i = 0; i < hand.size(); ++i) byName.emplace (hand[i].name, i);
+    for (size_t i = 0; i < kGenCuratedN; ++i)
+    {
+        const auto& g = kGenCurated[i]; if (id != g.pack) continue;
+        const auto it = byName.find (g.base); if (it == byName.end()) continue;
+        Preset p = gen::derive (hand[it->second], g.code, g.dup); p.set (P_MASTER_VOL, g.gain); out.push_back (std::move (p));
+    }
+    return out;
+}
+
+inline std::vector<Preset> forPack (const std::string& id)
+{
+    auto v = forPackHand (id); auto g = generatedFor (id, v);
+    v.insert (v.end(), std::make_move_iterator (g.begin()), std::make_move_iterator (g.end()));
     return v;
 }
 }} // namespace sk::presets

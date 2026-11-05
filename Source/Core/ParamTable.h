@@ -75,7 +75,7 @@ inline constexpr int kNumDivs = 16;
 // ----------------------------- grupos repetidos -------------------------------
 #define SK_ENGINE(X, E, id, NM, onDef, typeDef) \
     X(E##_ON,     id "_on",     "Motor " NM " Ativo",            PK_BOOL,   0, 1, onDef, "", "") \
-    X(E##_TYPE,   id "_type",   "Motor " NM " Tipo",             PK_CHOICE, 0, 3, typeDef, "", "Analógico|Wavetable|Sample|Corda") \
+    X(E##_TYPE,   id "_type",   "Motor " NM " Tipo",             PK_CHOICE, 0, 5, typeDef, "", "Analógico|Wavetable|Sample|Corda|Granular|Espectral") \
     X(E##_LEVEL,  id "_level",  "Motor " NM " Nível",            PK_FLOAT,  -60, 6, 0, "dB", "") \
     X(E##_PAN,    id "_pan",    "Motor " NM " Pan",              PK_FLOAT,  -1, 1, 0, "", "") \
     X(E##_COARSE, id "_coarse", "Motor " NM " Afinação",         PK_INT,    -36, 36, 0, "st", "") \
@@ -263,7 +263,36 @@ inline constexpr int kNumDivs = 16;
     X(A_KEYLO, "a_keylo", "Motor A Tecla Mín", PK_INT, 0, 127, 0, "", "") \
     X(A_KEYHI, "a_keyhi", "Motor A Tecla Máx", PK_INT, 0, 127, 127, "", "") \
     X(B_KEYLO, "b_keylo", "Motor B Tecla Mín", PK_INT, 0, 127, 0, "", "") \
-    X(B_KEYHI, "b_keyhi", "Motor B Tecla Máx", PK_INT, 0, 127, 127, "", "")
+    X(B_KEYHI, "b_keyhi", "Motor B Tecla Máx", PK_INT, 0, 127, 127, "", "") \
+    /* motores Granular e Espectral */ \
+    X(A_GR_SIZE,  "a_gr_size",  "Granular A Tamanho",   PK_LOG,   5, 500, 80, "ms", "") \
+    X(A_GR_DENS,  "a_gr_dens",  "Granular A Densidade", PK_LOG,   2, 120, 24, "/s", "") \
+    X(A_GR_POS,   "a_gr_pos",   "Granular A Posição",   PK_FLOAT, 0, 1, 0.3f, "%", "") \
+    X(A_GR_RAND,  "a_gr_rand",  "Granular A Aleatório", PK_FLOAT, 0, 1, 0.2f, "%", "") \
+    X(A_GR_PJIT,  "a_gr_pjit",  "Granular A Variação Altura", PK_FLOAT, 0, 1, 0.0f, "%", "") \
+    X(A_GR_SPEED, "a_gr_speed", "Granular A Velocidade", PK_FLOAT, -1, 2, 0.0f, "x", "") \
+    X(A_GR_SPREAD,"a_gr_spread","Granular A Espalhar",  PK_FLOAT, 0, 1, 0.6f, "%", "") \
+    X(A_SP_TILT,  "a_sp_tilt",  "Espectral A Inclinação", PK_FLOAT, 0, 2.5f, 1.0f, "", "") \
+    X(A_SP_FORM,  "a_sp_form",  "Espectral A Formante",  PK_LOG,   1, 64, 8, "", "") \
+    X(A_SP_FQ,    "a_sp_fq",    "Espectral A Nitidez",   PK_FLOAT, 0, 1, 0.4f, "%", "") \
+    X(A_SP_COMB,  "a_sp_comb",  "Espectral A Pente",     PK_FLOAT, 0, 1, 0.0f, "%", "") \
+    X(A_SP_ODD,   "a_sp_odd",   "Espectral A Par/Ímpar", PK_FLOAT, -1, 1, 0.0f, "", "") \
+    X(A_SP_SWEEP, "a_sp_sweep", "Espectral A Varrimento", PK_FLOAT, 0, 1, 0.5f, "%", "") \
+    X(A_SP_SMEAR, "a_sp_smear", "Espectral A Dispersão", PK_FLOAT, 0, 1, 0.0f, "%", "") \
+    X(B_GR_SIZE,  "b_gr_size",  "Granular B Tamanho",   PK_LOG,   5, 500, 80, "ms", "") \
+    X(B_GR_DENS,  "b_gr_dens",  "Granular B Densidade", PK_LOG,   2, 120, 24, "/s", "") \
+    X(B_GR_POS,   "b_gr_pos",   "Granular B Posição",   PK_FLOAT, 0, 1, 0.3f, "%", "") \
+    X(B_GR_RAND,  "b_gr_rand",  "Granular B Aleatório", PK_FLOAT, 0, 1, 0.2f, "%", "") \
+    X(B_GR_PJIT,  "b_gr_pjit",  "Granular B Variação Altura", PK_FLOAT, 0, 1, 0.0f, "%", "") \
+    X(B_GR_SPEED, "b_gr_speed", "Granular B Velocidade", PK_FLOAT, -1, 2, 0.0f, "x", "") \
+    X(B_GR_SPREAD,"b_gr_spread","Granular B Espalhar",  PK_FLOAT, 0, 1, 0.6f, "%", "") \
+    X(B_SP_TILT,  "b_sp_tilt",  "Espectral B Inclinação", PK_FLOAT, 0, 2.5f, 1.0f, "", "") \
+    X(B_SP_FORM,  "b_sp_form",  "Espectral B Formante",  PK_LOG,   1, 64, 8, "", "") \
+    X(B_SP_FQ,    "b_sp_fq",    "Espectral B Nitidez",   PK_FLOAT, 0, 1, 0.4f, "%", "") \
+    X(B_SP_COMB,  "b_sp_comb",  "Espectral B Pente",     PK_FLOAT, 0, 1, 0.0f, "%", "") \
+    X(B_SP_ODD,   "b_sp_odd",   "Espectral B Par/Ímpar", PK_FLOAT, -1, 1, 0.0f, "", "") \
+    X(B_SP_SWEEP, "b_sp_sweep", "Espectral B Varrimento", PK_FLOAT, 0, 1, 0.5f, "%", "") \
+    X(B_SP_SMEAR, "b_sp_smear", "Espectral B Dispersão", PK_FLOAT, 0, 1, 0.0f, "%", "")
 
 // --------------------------------- enum + tabela --------------------------------
 #define SK_ENUM_ROW(E, id, name, kind, mn, mx, def, unit, choices) P_##E,

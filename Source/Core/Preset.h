@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -34,10 +35,8 @@ struct Preset
 
 inline int paramIndexForId (const std::string& id)
 {
-    static std::vector<std::pair<std::string, int>> map;
-    if (map.empty()) for (int i = 0; i < P_COUNT; ++i) map.emplace_back (kParams[i].id, i);
-    for (auto& kv : map) if (kv.first == id) return kv.second;
-    return -1;
+    static const std::unordered_map<std::string, int> map = [] { std::unordered_map<std::string, int> m; for (int i = 0; i < P_COUNT; ++i) m.emplace (kParams[i].id, i); return m; }();
+    const auto it = map.find (id); return it == map.end() ? -1 : it->second;
 }
 
 // a que módulo pertence cada parâmetro (presets de módulo só escrevem estes)

@@ -19,18 +19,23 @@ int main()
     for (auto& d : defs)
     {
         Library lib; lib.appendShared (nuc); if (! d.core) buildPackLibrary (d, lib);
-        auto list = presets::forPack (d.id);
-        std::printf ("%-9s %2zu presets\n", d.id.c_str(), list.size());
+        auto list = presets::forPackHand (d.id); const size_t nHand = list.size();
+        { auto g = presets::generatedFor (d.id, list); list.insert (list.end(), g.begin(), g.end()); }
+        std::printf ("%-9s %4zu presets (%zu à mão + %zu gerados)\n", d.id.c_str(), list.size(), nHand, list.size() - nHand);
         CHECK (! list.empty(), "tem presets");
+        size_t idx = 0;
         for (auto& p : list)
         {
+            const bool isGen = idx++ >= nHand; if (isGen && (idx % 7) != 0) { ++total; CHECK (names.insert (p.pack + "/" + p.name).second, ("nome repetido: " + p.name).c_str()); Preset q; CHECK (presetFromJson (presetToJson (p), q) && q.name == p.name && q.engine == p.engine && q.qa == "auto", "json (gerado)"); if (! p.sampleA.empty()) CHECK (lib.indexOf (p.sampleA) >= 0, ("sample A inexistente: " + p.sampleA + " em " + p.name).c_str()); if (! p.sampleB.empty()) CHECK (lib.indexOf (p.sampleB) >= 0, ("sample B inexistente: " + p.sampleB + " em " + p.name).c_str()); continue; }
             ++total; CHECK (names.insert (p.pack + "/" + p.name).second, ("nome repetido: " + p.name).c_str());
             if (! p.sampleA.empty()) CHECK (lib.indexOf (p.sampleA) >= 0, ("sample A inexistente: " + p.sampleA + " em " + p.name).c_str());
             if (! p.sampleB.empty()) CHECK (lib.indexOf (p.sampleB) >= 0, ("sample B inexistente: " + p.sampleB + " em " + p.name).c_str());
             if (p.get (P_A_ON) > 0.5f && p.get (P_A_TYPE) == 2.0f) CHECK (! p.sampleA.empty(), ("motor A sample sem instrumento: " + p.name).c_str());
             if (p.get (P_B_ON) > 0.5f && p.get (P_B_TYPE) == 2.0f) CHECK (! p.sampleB.empty(), ("motor B sample sem instrumento: " + p.name).c_str());
+            const float stored = p.get (P_MASTER_VOL);
             const float pk = presets::calibrate (p, lib);
             const float mv = p.get (P_MASTER_VOL);
+            if (isGen) CHECK (std::fabs (mv - stored) < 0.25f, ("ganho curado desactualizado (regenerar com packgen curate): " + p.name).c_str());
             CHECK (pk > 0.002f, ("preset mudo: " + p.pack + "/" + p.name).c_str());
             if (pk <= 0.002f) std::printf ("   mudo: %s (pico %.5f)\n", p.name.c_str(), pk);
             sumDb += mv; ++nCal;
@@ -45,10 +50,10 @@ int main()
                 const double pdb = 20.0 * std::log10 (std::max (peak, 1e-6f)); if (std::fabs (pdb + 8.0) > 1.5) std::printf ("   fora do alvo: %s %.1f dB (master %.1f)\n", p.name.c_str(), pdb, mv); }
         }
     }
-    CHECK (total >= 500, "pelo menos 500 presets");
+    CHECK (total >= 3000, "pelo menos 3000 presets");
     // presets de módulo + calibração: todos os presets do Núcleo têm ganho em NucleoGains.h
     {
-        auto nuc = presets::forPack ("nucleo"); int missing = 0;
+        auto nuc = presets::forPackHand ("nucleo"); int missing = 0;
         for (auto& p : nuc) { bool f = false; for (auto& g : presets::kNucleoGains) if (p.name == g.first) { f = true; break; } if (! f) { ++missing; std::printf ("   sem ganho calibrado: %s\n", p.name.c_str()); } }
         CHECK (missing == 0, "presets do Núcleo sem ganho em NucleoGains.h (regenerar com packgen gains)");
         auto mods = presets::modulePresets(); std::set<std::string> mn; std::map<std::string, int> per;
@@ -92,6 +97,42 @@ int main()
         const std::string old = "{\"format\":1,\"name\":\"Antigo\",\"category\":\"Baixo\",\"params\":{}}";
         Preset o; CHECK (presetFromJson (old, o) && o.family == "Bass" && o.qa.empty() && o.version == 1, "formato 1 antigo abre"); ++legacy;
         std::printf("nucleo: %d presets, %d com QA automático (não ouvidos), %d teste formato 1\n", fam, qaAuto, legacy);
+    }
+    // gerador de variações: determinístico, e cada eixo altera de facto os presets onde é aplicável
+    {
+        auto hand = presets::forPackHand ("nucleo"); int changed[presets::gen::A_COUNT] = {}, tried[presets::gen::A_COUNT] = {};
+        for (size_t i = 0; i < hand.size(); i += 2)
+        {
+            const auto& b = hand[i]; const auto k = presets::gen::kindOf (b);
+            for (int a = 0; a < presets::gen::A_COUNT; ++a)
+                for (int opt = 1; opt <= 5; ++opt)
+                {
+                    if (! presets::gen::applicable ((presets::gen::Axis) a, b, k)) continue; Preset d = b; const char* w = presets::gen::apply ((presets::gen::Axis) a, opt, d, k);
+                    ++tried[a]; if (w && w[0] && presetToJson (d) != presetToJson (b)) ++changed[a];
+                    for (auto& kv : d.values) CHECK (kv.second >= kParams[kv.first].mn - 1e-4f && kv.second <= kParams[kv.first].mx + 1e-4f, "eixo produz valor fora do intervalo");
+                }
+            const uint32_t c = presets::gen::candidateCode (b, 3); CHECK (presetToJson (presets::gen::derive (b, c)) == presetToJson (presets::gen::derive (b, c)), "derive determinístico");
+        }
+        for (int a = 0; a < presets::gen::A_COUNT; ++a) { std::printf ("   eixo %d: %d / %d aplicações alteram o preset\n", a, changed[a], tried[a]); CHECK (tried[a] == 0 || changed[a] * 3 >= tried[a], "eixo quase nunca altera o preset"); }
+    }
+    // cobertura por família (Núcleo) e por pack, face às quotas do PDF
+    {
+        struct Qt { const char* k; int n; };
+        static const Qt fq[] = { { "Bass", 180 }, { "Leads", 150 }, { "Pads", 150 }, { "Keys", 140 }, { "Plucks", 130 }, { "Synths", 120 }, { "Strings", 90 }, { "Brass", 70 }, { "Bells", 80 }, { "Mallets", 60 }, { "Guitars", 80 }, { "Vocals", 70 },
+            { "Organs", 45 }, { "Woodwinds", 40 }, { "Drums", 100 }, { "Percussion", 80 }, { "Arpeggios", 100 }, { "Sequences", 90 }, { "Chords", 65 }, { "Textures", 80 }, { "SFX", 80 }, { "Cinematic", 65 }, { "Hybrid", 55 }, { "Experimental", 30 } };
+        static const Qt pq[] = { { "amapiano", 150 }, { "kizomba", 120 }, { "afrobeat", 140 }, { "kuduro", 110 }, { "rnb", 130 }, { "trap", 130 }, { "drill", 100 }, { "house", 130 }, { "edm", 120 }, { "pop", 100 }, { "cinematic", 100 } };
+        std::map<std::string, int> fam; auto nuc2 = presets::forPack ("nucleo"); std::map<std::string, int> eng;
+        for (auto& p : nuc2) { ++fam[p.family.empty() ? familyForCategory (p.category) : p.family]; ++eng[p.engine]; }
+        int sumF = 0, sumP = 0, short_ = 0;
+        for (auto& q : fq) { sumF += fam[q.k]; if (fam[q.k] < q.n) { ++short_; std::printf ("   família %-12s %3d / %3d\n", q.k, fam[q.k], q.n); } }
+        for (auto& q : pq) { const int n = (int) presets::forPack (q.k).size(); sumP += n; if (n < q.n) { ++short_; std::printf ("   pack %-12s %3d / %3d\n", q.k, n, q.n); } }
+        std::printf ("   Factory %d / 2150 · expansões %d / 1330 · famílias/packs abaixo da quota: %d\n", sumF, sumP, short_);
+        std::printf ("   motores no Núcleo:"); for (auto& kv : eng) std::printf (" %s=%d", kv.first.c_str(), kv.second); std::printf ("\n");
+        CHECK (eng["granular"] >= 20 && eng["spectral"] >= 20 && eng["physical"] >= 20, "presets com os motores Granular, Espectral e Corda");
+        CHECK (sumF + sumP >= 3000, "factory + expansões >= 3000");
+        // as variações curadas resolvem para uma base existente e não colidem de nome
+        std::set<std::string> all; std::map<std::string, std::set<std::string>> baseNames; for (auto& d : defs) for (auto& p : presets::forPackHand (d.id)) baseNames[d.id].insert (p.name);
+        for (size_t i = 0; i < presets::kGenCuratedN; ++i) { const auto& g = presets::kGenCurated[i]; CHECK (baseNames[g.pack].count (g.base) == 1, (std::string ("variação sem base: ") + g.base).c_str()); }
     }
     for (auto& e : presets::lintErrors()) { ++fails; std::printf ("LINT: %s\n", e.c_str()); }
     std::printf ("%zu presets, master médio %.1f dB\n", total, sumDb / std::max (1, nCal));

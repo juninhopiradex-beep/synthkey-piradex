@@ -36,7 +36,8 @@ endif()
 juce_add_binary_data(SynthKeyAssets SOURCES
     Resources/skins/liquid_chrome.jpg
     Resources/covers/nucleo.jpg Resources/covers/trap.jpg Resources/covers/rnb.jpg Resources/covers/afrobeat.jpg
-    Resources/covers/amapiano.jpg Resources/covers/drill.jpg Resources/covers/kizomba.jpg Resources/covers/kuduro.jpg)
+    Resources/covers/amapiano.jpg Resources/covers/drill.jpg Resources/covers/kizomba.jpg Resources/covers/kuduro.jpg
+    Resources/covers/house.jpg Resources/covers/edm.jpg Resources/covers/pop.jpg Resources/covers/cinematic.jpg)
 set_target_properties(SynthKeyAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 juce_add_plugin(SynthKey

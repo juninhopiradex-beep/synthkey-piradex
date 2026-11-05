@@ -110,6 +110,14 @@ public:
         }
     }
 
+    // amplitude + fase por harmónica (1..n) → um frame com os 8 mips (motor Espectral)
+    static void buildFrameFromHarmonics (const float* amp, const float* ph, int n, float* dstBase, std::vector<Cpx>& buf)
+    {
+        Spec spec; clear (spec);
+        for (int h = 1; h <= n && h <= kMaxHarm; ++h) setHarm (spec, h, amp[h], ph[h]);
+        buildMips (spec, dstBase, true, buf);
+    }
+
 private:
     using Spec = std::array<Cpx, kMaxHarm + 1>;   // H[h]: x(φ) = Σ Re(H[h]·e^{j2πhφ})
     std::vector<float> data, extra;

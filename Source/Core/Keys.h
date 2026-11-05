@@ -31,6 +31,7 @@ inline const char* prefixFor (const std::string& packId)
 {
     if (packId == "trap") return "TRAP"; if (packId == "rnb") return "RNB"; if (packId == "afrobeat") return "AFRO";
     if (packId == "amapiano") return "AMAP"; if (packId == "drill") return "DRILL"; if (packId == "kizomba") return "KIZ"; if (packId == "kuduro") return "KUDU";
+    if (packId == "house") return "HOUSE"; if (packId == "edm") return "EDM"; if (packId == "pop") return "POP"; if (packId == "cinematic") return "CINE";
     return "PACK";
 }
 

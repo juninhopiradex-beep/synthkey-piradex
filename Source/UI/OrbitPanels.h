@@ -106,7 +106,8 @@ public:
         const int E = mode == 1 ? 1 : 0, o = E ? P_B_ON - P_A_ON : 0; const int type = (int) proc.getReal (P_A_TYPE + o);
         float arcVal = 0.5f; int posParam = -1;
         if (mode == 2) arcVal = juce::jlimit (0.0f, 1.0f, (proc.getReal (P_MASTER_VOL) + 60.0f) / 66.0f);
-        else if (type == 1) { arcVal = proc.getReal (P_A_WTPOS + o); posParam = P_A_WTPOS + o; }
+        else if (type == 1 || type == 5) { arcVal = proc.getReal (P_A_WTPOS + o); posParam = P_A_WTPOS + o; }
+        else if (type == 4) { arcVal = proc.getReal (E ? P_B_GR_POS : P_A_GR_POS); }
         else arcVal = juce::jlimit (0.0f, 1.0f, (proc.getReal (P_A_LEVEL + o) + 60.0f) / 66.0f);
 
         // ---- anéis
@@ -143,7 +144,7 @@ public:
         for (int i = 0; i < pts; ++i)
         {
             const float ph = (float) i / (float) (pts - 1); float v = 0.0f;
-            if (mode == 2 || type == 2) v = live[(size_t) std::min (kLive - 1, (int) (ph * (kLive - 1)))];
+            if (mode == 2 || type >= 2) v = live[(size_t) std::min (kLive - 1, (int) (ph * (kLive - 1)))];
             else if (type == 1)
             {
                 const int tab = juce::jlimit (0, Wavetables::kTables, (int) proc.getReal (P_A_WTTAB + o)); const int fr = juce::jlimit (0, Wavetables::kFrames - 1, (int) std::lround (proc.getReal (P_A_WTPOS + o) * (Wavetables::kFrames - 1)));
@@ -167,6 +168,8 @@ public:
         else if (type == 1) { l1 = TX ("POSI\xC3\x87\xC3\x83O"); v1 = juce::String ((int) std::lround (arcVal * 100.0f)) + "%"; l2 = "FRAME"; v2 = juce::String (1 + (int) std::lround (arcVal * (Wavetables::kFrames - 1))) + " / " + juce::String (Wavetables::kFrames); }
         else if (type == 2) { l1 = "SAMPLE"; v1 = proc.sampleDisplayName (E); l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB";
                        if (loopOn) { l2 = "LOOP"; v2 = juce::String (lp.srcBpm, 0) + juce::String (juce::CharPointer_UTF8 (" \xE2\x86\x92 ")) + juce::String (lp.hostBpm, 0) + " bpm"; } }
+        else if (type == 4) { l1 = "GRANULAR"; v1 = proc.sampleDisplayName (E); l2 = TX ("DENSIDADE"); v2 = juce::String ((int) std::lround (E ? proc.getReal (P_B_GR_DENS) : proc.getReal (P_A_GR_DENS))) + " /s"; }
+        else if (type == 5) { l1 = TX ("ESPECTRAL"); v1 = TX ("posi\xC3\xA7\xC3\xA3o ") + juce::String ((int) std::lround (arcVal * 100.0f)) + "%"; l2 = TX ("FORMANTE"); v2 = juce::String (E ? proc.getReal (P_B_SP_FORM) : proc.getReal (P_A_SP_FORM), 1) + "x"; }
         else if (type == 3) { l1 = "CORDA"; v1 = juce::String ((int) std::lround ((E ? proc.getReal (P_B_KS_DAMP) : proc.getReal (P_A_KS_DAMP)) * 100.0f)) + "% amort."; l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB"; }
         else { l1 = "ONDA"; v1 = juce::StringArray::fromTokens (TX (kParams[P_A_WAVE].choices), "|", "")[(int) proc.getReal (P_A_WAVE + o)]; l2 = "UNISSON"; v2 = juce::String ((int) proc.getReal (P_A_UNI + o)); }
         auto lbl = [&] (juce::Rectangle<int> r, const juce::String& a, const juce::String& bb, juce::Justification j)
@@ -191,7 +194,7 @@ public:
             else t = TX ("LOOP \xC2\xB7 esticado \xC3\x97") + juce::String (ratio, 2) + (lp.hostRunning ? TX (" \xC2\xB7 sincronizado com o projeto") : TX (" \xC2\xB7 projeto parado"));
             g.setColour (theme::accent2()); g.setFont (theme::font (10.0f, true)); g.drawText (t, 0, getHeight() - 20, getWidth() - 110, 12, juce::Justification::centred);
         }
-        else if (! active && (mode == 2 || type == 2)) { g.setColour (theme::dim()); g.setFont (theme::font (10.5f)); g.drawText (TX ("toca uma nota\xE2\x80\xA6"), 0, getHeight() - 20, getWidth(), 12, juce::Justification::centred); }
+        else if (! active && (mode == 2 || type >= 2)) { g.setColour (theme::dim()); g.setFont (theme::font (10.5f)); g.drawText (TX ("toca uma nota\xE2\x80\xA6"), 0, getHeight() - 20, getWidth(), 12, juce::Justification::centred); }
     }
 private:
     static bool dstBelongs (int dst, int E)

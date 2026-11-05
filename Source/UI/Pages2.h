@@ -340,11 +340,12 @@ public:
     void tick() override { ++ticks; if (ticks % 30 == 1) { list.repaint(); refreshPackToggles(); } if (studio && studio->isVisible()) studio->tick(); }
     void reload() { rows = AccessManager::get().issuedKeys(); std::reverse (rows.begin(), rows.end()); list.updateContent(); list.repaint(); }
 private:
-    // packs de fábrica + os criados no Estúdio (até 12 no total)
+    // packs de fábrica + os criados no Estúdio (até 16 no total)
     void refreshPackToggles()
     {
-        std::vector<std::pair<std::string, juce::String>> want = { { "trap", "Trap" }, { "rnb", "R&B" }, { "afrobeat", "Afrobeats" }, { "amapiano", "Amapiano" }, { "drill", "Drill" }, { "kizomba", TX ("Kizomba \xC2\xB7 Zouk") }, { "kuduro", "Kuduro" } };
-        for (auto& e : PackHub::get().entries()) if (e.custom && want.size() < 12) want.emplace_back (e.id, TX (e.name.c_str()));
+        std::vector<std::pair<std::string, juce::String>> want = { { "trap", "Trap" }, { "rnb", "R&B" }, { "afrobeat", "Afrobeats" }, { "amapiano", "Amapiano" }, { "drill", "Drill" }, { "kizomba", TX ("Kizomba \xC2\xB7 Zouk") }, { "kuduro", "Kuduro" },
+            { "house", TX ("House \xC2\xB7 Deep \xC2\xB7 Tech") }, { "edm", TX ("EDM \xC2\xB7 Future Bass") }, { "pop", TX ("Pop \xC2\xB7 Dance") }, { "cinematic", TX ("Cinematic \xC2\xB7 Ambient") } };
+        for (auto& e : PackHub::get().entries()) if (e.custom && want.size() < 16) want.emplace_back (e.id, TX (e.name.c_str()));
         if ((int) want.size() == packToggles.size()) return;
         std::set<std::string> on; for (auto* t : packToggles) if (t->getToggleState()) on.insert (t->getProperties()["pack"].toString().toStdString());
         packToggles.clear();

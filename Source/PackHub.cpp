@@ -3,6 +3,7 @@
 #include "AppPaths.h"
 #include "BinaryData.h"
 #include "Core/NucleoGains.h"
+#include <unordered_map>
 #include "UserAudio.h"
 #include "Core/LoopStretcher.h"
 
@@ -56,8 +57,8 @@ void PackHub::rescan()
         e.cover = coverFor (d.id);
         if (d.core)
         {
-            e.installed = true; auto pl = presets::forPack ("nucleo");
-            for (auto& p : pl) for (auto& g : presets::kNucleoGains) if (p.name == g.first) p.set (P_MASTER_VOL, g.second);
+            e.installed = true; auto pl = presets::forPack ("nucleo");       // os gerados já trazem o ganho curado; os escritos à mão vêm de NucleoGains.h
+            { std::unordered_map<std::string, float> gm; for (auto& g : presets::kNucleoGains) gm.emplace (g.first, g.second); for (auto& p : pl) { const auto it = gm.find (p.name); if (it != gm.end()) p.set (P_MASTER_VOL, it->second); } }
             { auto mp = presets::modulePresets(); pl.insert (pl.end(), std::make_move_iterator (mp.begin()), std::make_move_iterator (mp.end())); }   // presets de módulo (sem calibração: só mexem num módulo)
             e.presetCount = (int) pl.size(); pres[d.id] = std::move (pl);
         }

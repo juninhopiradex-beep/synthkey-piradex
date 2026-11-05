@@ -437,7 +437,7 @@ void SynthKeyProcessor::updatePreviewState()
     bool locked = false;
     for (int e = 0; e < 2; ++e)
     {
-        if (getReal (e == 0 ? P_A_ON : P_B_ON) < 0.5f || (int) getReal (e == 0 ? P_A_TYPE : P_B_TYPE) != 2) continue;
+        if (getReal (e == 0 ? P_A_ON : P_B_ON) < 0.5f || ((int) getReal (e == 0 ? P_A_TYPE : P_B_TYPE) != 2 && (int) getReal (e == 0 ? P_A_TYPE : P_B_TYPE) != 4)) continue;
         const auto id = getSampleId (e).toStdString(); if (id.empty() || sampleMissing (e)) continue;
         const auto pack = PackHub::packOfInstrument (id); PackEntry pe;
         if (PackHub::get().entry (pack, pe) && ! AccessManager::get().packStatus (pack, pe.core).usable()) locked = true;
@@ -524,7 +524,7 @@ void SynthKeyProcessor::loadPreset (const Preset& p, int idx)
     }
     loadingPreset = false;
     updatePreviewState();
-    if (getReal (P_A_TYPE) == 2.0f || getReal (P_B_TYPE) == 2.0f) previewLeftSamples.store ((int) (15.0 * sr));
+    if (getReal (P_A_TYPE) == 2.0f || getReal (P_B_TYPE) == 2.0f || getReal (P_A_TYPE) == 4.0f || getReal (P_B_TYPE) == 4.0f) previewLeftSamples.store ((int) (15.0 * sr));
     if (onPresetLoaded) onPresetLoaded();
 }
 
@@ -588,6 +588,9 @@ bool SynthKeyProcessor::saveUserPreset (const juce::String& name, juce::String& 
 
 bool SynthKeyProcessor::presetIsLocked (const Preset& p) const
 {
+    // um preset de uma expansão está bloqueado enquanto o pack não estiver activo — mesmo que só use motores sintéticos
+    if (! p.pack.empty() && p.pack != "nucleo" && p.pack != "user")
+    { PackEntry pe; if (PackHub::get().entry (p.pack, pe) && ! pe.core && ! AccessManager::get().packStatus (p.pack, pe.core).usable()) return true; }
     for (const auto& id : { p.sampleA, p.sampleB })
     {
         if (id.empty()) continue; const auto pack = PackHub::packOfInstrument (id); PackEntry pe;

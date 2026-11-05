@@ -164,6 +164,62 @@ inline std::vector<PackDef> buildPackDefs()
         T ("shout2", "Voz Ey", "Vozes", G_VOX, 1, 0.35f, 0.3f, 0, 55, 67, 6), D ("conga", "Conga", "Percussão", G_CONGA, 260, 0.18f, 0.5f, 0, 3) };
       p.kit = { { 36, "kick", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 46, "ohat", 0 } };
       v.push_back (p); }
+
+    // ------------------------------------------------------------------ House · Deep · Tech
+    { PackDef p; p.id = "house"; p.name = "House · Deep · Tech"; p.style = "house"; p.accent = "#3DDCFF";
+      p.desc = "Bombos de clube, baixos sólidos, stabs de acordes, pianos e órgãos house, plucks tech e arps de pista.";
+      p.insts = {
+        D ("kick", "Bombo Club", "Bateria", G_KICK, 145, 46, 0.02f, 0.3f, 3), D ("clap", "Palmas", "Bateria", G_CLAP, 0.14f, 0.9f, 0, 0, 3),
+        D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.03f, 1.0f, 1, 0, 3), D ("ohat", "Hi-Hat Aberto", "Bateria", G_OHAT, 0.24f, 1.0f, 1, 0, 2),
+        D ("shaker", "Shaker", "Percussão", G_SHAKER, 0.14f, 1.0f, 0, 0, 2), D ("rim", "Rimshot", "Bateria", G_RIM, 900, 0, 0, 0, 1), D ("tom", "Tom", "Bateria", G_TOM, 110, 0.3f, 0.2f, 0, 2),
+        T ("bass", "Baixo House", "Baixo", G_SUB, 1.1f, 0.5f, 0, 0, 28, 52, 3), T ("stab", "Stab de Acordes", "Sintetizador", G_STAB, 0.5f, 3200, 0.7f, 0, 36, 72, 3),
+        T ("piano", "Piano House", "Teclas", G_PIANO, 0.5f, 2.4f, 0, 0, 48, 84, 4), T ("organ", "Órgão House", "Teclas", G_EP, 0.4f, 1.6f, 0.2f, 0, 48, 84, 6),
+        T ("pluck", "Pluck Tech", "Teclas", G_PLUCK, 0.7f, 0.5f, 1.2f, 0, 40, 76, 4), T ("vox", "Voz Ah", "Vozes", G_VOX, 0, 0.9f, 1.0f, 0, 48, 76, 6),
+        D ("riser", "Subida", "Efeitos", G_RISER, 2.8f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 1) };
+      p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 }, { 46, "ohat", 0 } };
+      v.push_back (p); }
+
+    // ------------------------------------------------------------------ EDM · Future Bass
+    { PackDef p; p.id = "edm"; p.name = "EDM · Future Bass"; p.style = "edm"; p.accent = "#FF4DDB";
+      p.desc = "Supersaws, leads de festival, acordes futuros, baixos de big room e impactos.";
+      p.insts = {
+        D ("kick", "Bombo Big Room", "Bateria", G_KICK, 170, 48, 0.014f, 0.32f, 3), D ("snare", "Caixa", "Bateria", G_SNARE, 210, 0.9f, 0.1f, 1.0f, 3),
+        D ("clap", "Palmas", "Bateria", G_CLAP, 0.16f, 1.0f, 0, 0, 3), D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.028f, 1.1f, 1, 0, 3), D ("ohat", "Hi-Hat Aberto", "Bateria", G_OHAT, 0.22f, 1.1f, 1, 0, 2),
+        D ("tom", "Tom", "Bateria", G_TOM, 120, 0.3f, 0.2f, 0, 2),
+        T ("stab", "Supersaw Stab", "Sintetizador", G_STAB, 0.8f, 5500, 1.0f, 0, 36, 72, 3), T ("pluck", "Pluck Brilhante", "Teclas", G_PLUCK, 0.6f, 0.8f, 1.5f, 0, 40, 84, 4),
+        T ("bell", "Sino Brilhante", "Mallets", G_BELL, 2.4f, 1.0f, 0, 0, 60, 96, 4), T ("pad", "Pad Futuro", "Pads", G_PAD, 6.0f, 10.0f, 0.4f, 0, 36, 72, 12),
+        T ("vox", "Voz Hook", "Vozes", G_VOX, 2, 0.8f, 1.0f, 1, 55, 79, 4), T ("sub", "Sub Big Room", "Baixo", G_SUB, 1.0f, 0.7f, 0, 0, 24, 48, 3),
+        D ("riser", "Subida", "Efeitos", G_RISER, 3.5f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.8f, 0, 0, 0, 1) };
+      p.kit = { { 36, "kick", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 46, "ohat", 0 } };
+      v.push_back (p); }
+
+    // ------------------------------------------------------------------ Pop · Dance
+    { PackDef p; p.id = "pop"; p.name = "Pop · Dance"; p.style = "pop"; p.accent = "#FFD84D";
+      p.desc = "Teclas de rádio, plucks pop, leads brilhantes, baixos modernos, cortes de voz e acordes de refrão.";
+      p.insts = {
+        D ("kick", "Bombo Pop", "Bateria", G_KICK, 150, 50, 0.02f, 0.26f, 3), D ("snare", "Caixa", "Bateria", G_SNARE, 200, 0.8f, 0.12f, 0.9f, 3),
+        D ("clap", "Palmas", "Bateria", G_CLAP, 0.14f, 0.9f, 0, 0, 3), D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.03f, 1.0f, 1, 0, 3), D ("ohat", "Hi-Hat Aberto", "Bateria", G_OHAT, 0.24f, 1.0f, 1, 0, 2),
+        D ("shaker", "Shaker", "Percussão", G_SHAKER, 0.15f, 1.0f, 0, 0, 2),
+        T ("ep", "Teclas de Rádio", "Teclas", G_EP, 0.4f, 2.6f, 0.4f, 0, 48, 84, 4), T ("piano", "Piano Pop", "Teclas", G_PIANO, 0.5f, 2.6f, 0, 0, 48, 84, 4),
+        T ("pluck", "Pluck Pop", "Teclas", G_PLUCK, 0.8f, 0.6f, 1.5f, 0, 40, 84, 4), T ("bass", "Baixo Moderno", "Baixo", G_BASSG, 1.0f, 0.2f, 1.3f, 0, 28, 52, 4),
+        T ("stab", "Acordes Pop", "Sintetizador", G_STAB, 0.6f, 4000, 0.8f, 0, 36, 72, 3), T ("vox", "Corte de Voz", "Vozes", G_VOX, 3, 0.4f, 0.4f, 1, 55, 79, 4),
+        T ("pad", "Pad Brilhante", "Pads", G_PAD, 6.0f, 10.0f, 0.4f, 0, 36, 72, 12), D ("riser", "Subida", "Efeitos", G_RISER, 2.4f, 0, 0, 0, 1) };
+      p.kit = { { 36, "kick", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 }, { 46, "ohat", 0 } };
+      v.push_back (p); }
+
+    // ------------------------------------------------------------------ Cinematic · Ambient
+    { PackDef p; p.id = "cinematic"; p.name = "Cinematic · Ambient"; p.style = "cinematic"; p.accent = "#8FA8FF";
+      p.desc = "Drones, cordas e metais épicos, pads de brilho, pulsos de tensão, impactos e atmosferas em evolução.";
+      p.insts = {
+        T ("pad", "Pad Atmosférico", "Pads", G_PAD, 8.0f, 16.0f, 0.5f, 0, 36, 72, 12), T ("strings", "Cordas Emotivas", "Pads", G_PAD, 7.0f, 9.0f, 0.4f, 0, 36, 76, 12),
+        T ("drone", "Drone Escuro", "Pads", G_PAD, 9.0f, 20.0f, 0.1f, 0, 24, 48, 12), T ("bell", "Sino Cinemático", "Mallets", G_BELL, 3.4f, 1.2f, 0, 0, 48, 84, 6),
+        T ("choir", "Coro", "Vozes", G_VOX, 0, 1.6f, 1.0f, 1, 48, 76, 6), T ("sub", "Sub Profundo", "Baixo", G_SUB, 1.6f, 0.5f, 0, 0, 24, 48, 6),
+        T ("pluck", "Pizzicato", "Teclas", G_PLUCK, 0.9f, 0.5f, 1.6f, 0, 40, 84, 6), T ("piano", "Piano Emotivo", "Teclas", G_PIANO, 0.5f, 3.0f, 0, 0, 48, 84, 6),
+        D ("tom", "Tambor Épico", "Percussão", G_TOM, 70, 0.55f, 0.3f, 0, 3), D ("kick", "Bombo Épico", "Bateria", G_KICK, 100, 40, 0.03f, 0.5f, 2),
+        D ("riser", "Subida Épica", "Efeitos", G_RISER, 4.5f, 0, 0, 0, 1), D ("impact", "Impacto Trailer", "Efeitos", G_IMPACT, 3.6f, 0, 0, 0, 2) };
+      p.kit = { { 36, "kick", 0 }, { 41, "tom", 0 } };
+      v.push_back (p); }
+
     return v;
 }
 
