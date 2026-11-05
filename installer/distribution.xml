@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<installer-gui-script minSpecVersion="1">
+<installer-gui-script minSpecVersion="2">
     <title>SYNTHKEY by Piradex</title>
-    <welcome file="welcome.txt" mime-type="text/plain"/>
+    <organization>com.beatfreak</organization>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.txt" mime-type="text/plain"/>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
     <allowed-os-versions>
         <os-version min="10.13"/>
@@ -15,7 +17,7 @@
             description="O sintetizador. Obrigatório." enabled="false" selected="true">
         <pkg-ref id="com.piradex.synthkey.plugins"/>
     </choice>
-    <choice id="com.piradex.synthkey.packs" title="Packs de samples (Trap, R&amp;B, Afrobeats, Amapiano, Drill, Kizomba, Kuduro)"
+    <choice id="com.piradex.synthkey.packs" title="Packs de samples (Trap, R&amp;B, Afrobeats, Amapiano, Drill, Kizomba, Kuduro, House, EDM, Pop, Cinematic)"
             description="Bibliotecas por estilo. Ficam bloqueadas até inserir a chave de cada pack. Pode instalá-las mais tarde." start_selected="true">
         <pkg-ref id="com.piradex.synthkey.packs"/>
     </choice>

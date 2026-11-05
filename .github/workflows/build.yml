@@ -130,7 +130,7 @@ jobs:
       - name: Criar instalador .pkg e .dmg
         run: |
           mkdir -p stage
-          for f in distribution.xml welcome.txt LEIA-ME.txt; do sed "s/@VERSAO@/$VERSAO/g" "installer/$f" > "stage/$f"; done
+          for f in distribution.xml welcome.html license.txt LEIA-ME.txt; do sed "s/@VERSAO@/$VERSAO/g" "installer/$f" > "stage/$f"; done
           mkdir -p root/Library/Audio/Plug-Ins/VST3 root/Library/Audio/Plug-Ins/Components root/Applications
           cp -R "$ART/VST3/SYNTHKEY by Piradex.vst3" root/Library/Audio/Plug-Ins/VST3/
           cp -R "$ART/AU/SYNTHKEY by Piradex.component" root/Library/Audio/Plug-Ins/Components/

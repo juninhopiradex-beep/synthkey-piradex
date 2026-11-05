@@ -1,21 +1,41 @@
-﻿SYNTHKEY by Piradex — Windows 10 / 11 (64 bits)
+﻿SYNTHKEY
+HYBRID SYNTHESIZER
+Professional Audio Plugin | VST3 e Standalone
+Desenvolvido por Juninho Piradex | Beatfreak Music
 
-O instalador coloca:
-  Plugin VST3 : C:\Program Files\Common Files\VST3\SYNTHKEY by Piradex.vst3
-  Aplicação   : C:\Program Files\Piradex\SYNTHKEY\SYNTHKEY by Piradex.exe (versão independente)
-  Packs       : C:\ProgramData\Piradex\SYNTHKEY\Packs   (opcional)
+BEM-VINDO AO SYNTHKEY
+Obrigado por escolher o SYNTHKEY, um sintetizador híbrido (analógico, wavetable, samples, corda, granular e espectral) com navegador de presets inteligente, Sound Match, assistente de sound design e packs de estilo.
 
-Depois de instalar:
-  1. Abra o DAW (Ableton, FL Studio, Cubase, Reaper, Studio One, Bitwig...).
-  2. Peça ao DAW para procurar plugins de novo, se não aparecer logo.
+INFORMAÇÕES DO PRODUTO
+  Produto:            SYNTHKEY
+  Categoria:          Sintetizador híbrido (VSTi)
+  Versão:             1.7.0
+  Desenvolvedor:      Ricardo Amorim (Juninho Piradex)
+  Marca:              Piradex Audio Plugins
+  Produção:           Beatfreak Music / Beatfreak Studio
+  Website oficial:    https://www.beatfreakstudio.com
+  Sistema operativo:  Windows 10 / 11 (64 bits)
+  Formatos:           VST3 e aplicação independente (Standalone)
+
+DESTINOS DE INSTALAÇÃO
+  VST3        C:\Program Files\Common Files\VST3\SYNTHKEY by Piradex.vst3
+  Standalone  C:\Program Files\Piradex\SYNTHKEY\SYNTHKEY by Piradex.exe
+  Packs       C:\ProgramData\Piradex\SYNTHKEY\Packs   (opcional)
+
+APÓS A INSTALAÇÃO
+  1. Abra a sua DAW (Ableton, FL Studio, Cubase, Reaper, Studio One, Bitwig...).
+  2. Peça à DAW para procurar plugins de novo, se não aparecer logo.
   3. Procure "SYNTHKEY by Piradex" (fabricante: Piradex), como instrumento.
-  4. Na primeira vez que abrir o plugin, introduza a senha de acesso.
-  5. Para ativar um pack: separador PACKS → cartão do estilo → "Inserir chave".
+  4. Na primeira vez que abrir o plugin, introduza a senha de acesso, se for pedida.
+  5. Para ativar um pack: separador PACKS > cartão do estilo > "Inserir chave".
 
-Se o Windows mostrar "O Windows protegeu o seu PC":
-  clique em "Mais informações" → "Executar mesmo assim".
-  (O instalador ainda não tem assinatura digital paga.)
+Se o Windows mostrar "O Windows protegeu o seu PC": clique em "Mais informações" > "Executar mesmo assim" (o instalador ainda não tem assinatura digital paga).
 
-Instalação manual (sem instalador): copie a pasta "SYNTHKEY by Piradex.vst3"
-do ficheiro .zip para C:\Program Files\Common Files\VST3\ e os ficheiros .bfpack
-para C:\ProgramData\Piradex\SYNTHKEY\Packs (ou arraste um .bfpack para a janela do plugin).
+Instalação manual (sem instalador): copie a pasta "SYNTHKEY by Piradex.vst3" do ficheiro .zip para C:\Program Files\Common Files\VST3\ e os ficheiros .bfpack para C:\ProgramData\Piradex\SYNTHKEY\Packs (ou arraste um .bfpack para a janela do plugin).
+
+INFORMAÇÃO LEGAL
+© 2026 Beatfreak Music / Piradex Audio Plugins. Todos os direitos reservados.
+SYNTHKEY e os respetivos componentes de software são propriedade dos seus titulares. A utilização está sujeita aos termos da licença de software aplicável.
+
+BEATFREAK MUSIC — Professional Audio Technology
+www.beatfreakstudio.com
