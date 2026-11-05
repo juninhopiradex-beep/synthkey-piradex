@@ -126,3 +126,13 @@ a ativação online está prevista para a v1.1.
 * **Presets:** 13 famílias novas (Cordas, Metais, Sinos, Mallets, Guitarras, Órgãos, Sopros, Acordes, Sequências, Texturas, Cinemático, Híbrido, Experimental), modelação física, split/layer, e 46 presets de módulo (osc/filtro/env/mod/fx/arp) que só alteram o seu módulo. Formato `.skpreset` 2 com família, subfamília, motor, género, papel, módulo, QA e versão; ficheiros do formato 1 continuam a abrir.
 * **Estado de validação:** os presets novos têm `qa: auto` (passaram nos testes automáticos de nível, DC, cauda, mono, duplicados e NaN); **nenhum foi ouvido por uma pessoa**. O morph entre presets existe no núcleo (`morphParams`) mas ainda não tem controlo na interface.
 * Os ganhos de calibração do Núcleo (`NucleoGains.h`) são gerados por `packgen gains` e um teste falha se faltar algum preset.
+
+## v1.6.0 (em desenvolvimento) — motores Granular e Espectral, 4 packs novos, 3 450 presets
+
+* **Motor Granular** (tipo 4): até 12 grãos Hann por voz sobre a zona de sample, semente determinística por nota. Controlos: Tamanho, Densidade, Posição, Aleatório, Altura±, Velocidade (−1…2, negativo = reverso) e Espalhar (`a_gr_*` / `b_gr_*`).
+* **Motor Espectral** (tipo 5): síntese aditiva (256 harmónicas) por tabela de 32 frames band-limited — Inclinação, Formante, Nitidez, Pente, Par/Ímpar, Varrer, Dispersão (`a_sp_*` / `b_sp_*`). A tabela reconstrói-se de forma incremental na thread de áudio (sem esperas nem alocações); a POSIÇÃO percorre o espectro e é modulável por voz.
+* **4 packs novos de género:** House · Deep · Tech, EDM · Future Bass, Pop · Dance, Cinematic (capas provisórias geradas, a substituir por arte final).
+* **3 450 presets** (alvo do PDF: 3 480): Factory 2 124 / 2 150 e expansões 1 326 / 1 330. 738 escritos à mão ("bases") e 2 712 variações geradas por `gen::derive` (código de 27 bits = 9 eixos × 3 bits) e **curadas por máquina** (`packgen curate`: render, impressão digital de 8 características, rejeição de quase-duplicados, ganho calibrado) — tabela em `GenCurated.h`.
+* **Quotas ainda abaixo do PDF** (o gerador não encontrou variações suficientemente distintas): Vocals −17, Percussion −10, SFX −5, Drums −1 (Factory) e Cinematic −4 (pack). Resolve-se com mais bases escritas à mão.
+* **Estado de validação:** todos os gerados têm `qa: "auto"` — **ninguém os ouviu**. A medição agora é determinística (motor novo por medição; antes o estado residual de um preset alterava o ganho em até ±2 dB).
+* **Regenerar:** `packgen curate Source/Core/GenCurated.h 0.6` (≈9 min) e depois `packgen gains Source/Core/NucleoGains.h`. Um teste falha se um ganho curado estiver desactualizado.
