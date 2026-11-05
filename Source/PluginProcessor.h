@@ -75,6 +75,12 @@ public:
     sk::Preset capturePreset (const juce::String& name) const;
     bool presetIsLocked (const sk::Preset& p) const;      // usa instrumentos de um pack bloqueado?
     void randomizePatch (float amount);
+    // comparação A/B: A = o som que tinhas ao ligar, B = cópia onde editas/carregas outro preset; alternar não perde nenhum dos dois
+    int abState() const { return abOn ? abCur + 1 : 0; }               // 0 desligado · 1 = A · 2 = B
+    void abToggle();                                                   // 1.ª vez: B começa igual a A e fica ativo; depois alterna A↔B
+    void abCopyToOther();                                              // copia o som atual para o outro lado
+    void abOff() { abOn = false; }                                     // sai da comparação, mantém o som atual
+    juce::String abName (int slot) const { return slot >= 0 && slot < 2 ? abNameStr[slot] : juce::String(); }
     // morph entre o som actual e um preset-alvo (t 0..1); os samples trocam a meio
     bool beginMorph (int targetIndex);
     void setMorph (float t);
@@ -125,6 +131,7 @@ private:
     void rebuildLibrary();
     struct Snapshot { std::vector<float> v; juce::String a, b; };
     Snapshot takeSnapshot() const; void applySnapshot (const Snapshot& s); static bool sameSnapshot (const Snapshot& x, const Snapshot& y);
+    Snapshot abSlot[2]; juce::String abNameStr[2]; int abIdx[2] = { -1, -1 }; int abCur = 0; bool abOn = false;
     std::vector<Snapshot> undoStack, redoStack; Snapshot committed; bool haveCommitted = false; int quietTicks = 0;
     int chanNote[17] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };      // MPE: nota ativa de cada canal
     juce::String encodeUserWavetable() const; bool decodeUserWavetable (const juce::String& b64); juce::String userWtName;

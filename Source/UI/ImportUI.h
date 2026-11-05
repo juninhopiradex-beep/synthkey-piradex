@@ -53,7 +53,7 @@ private:
 };
 
 // menu "largar um ficheiro de áudio na janela": o que fazer com ele
-inline void showDropMenu (SynthKeyProcessor& p, juce::Component* target, const juce::File& f)
+inline void showDropMenu (SynthKeyProcessor& p, juce::Component* target, const juce::File& f, std::function<void (const juce::File&)> onMatch = {})
 {
     juce::PopupMenu m; m.addSectionHeader (f.getFileName());
     m.addItem (1, juce::String (juce::CharPointer_UTF8 ("Wavetable \xE2\x86\x92 Motor A")));
@@ -61,8 +61,10 @@ inline void showDropMenu (SynthKeyProcessor& p, juce::Component* target, const j
     m.addSeparator();
     m.addItem (3, juce::String (juce::CharPointer_UTF8 ("Instrumento (sample) \xE2\x86\x92 Motor A")));
     m.addItem (4, juce::String (juce::CharPointer_UTF8 ("Instrumento (sample) \xE2\x86\x92 Motor B")));
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [&p, f] (int r)
+    if (onMatch) { m.addSeparator(); m.addItem (5, juce::String (juce::CharPointer_UTF8 ("Sound Match: encontrar presets parecidos com este som"))); }
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [&p, f, onMatch] (int r)
     {
+        if (r == 5 && onMatch) { onMatch (f); return; }
         if (r == 1 || r == 2) importWavetableFile (p, r - 1, f);
         else if (r == 3 || r == 4) importSampleFile (p, r - 3, f);
     });

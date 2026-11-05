@@ -7,6 +7,8 @@
 #include "UI/ModDrag.h"
 #include "UI/Help.h"
 #include "UI/OrbitSom.h"
+#include "UI/SimplePage.h"
+#include "PackUpdater.h"
 #include "Core/SoundGen.h"
 
 using namespace ui;
@@ -38,6 +40,29 @@ public:
         g.setColour (on ? theme::accent() : (hover ? theme::dim() : theme::stroke())); g.drawRoundedRectangle (r, 7.0f, 1.0f);
         g.setFont (theme::font (10.0f, true)); g.setColour (on ? theme::accent().brighter (0.5f) : theme::dim()); g.drawText (getButtonText(), r.toNearestInt(), juce::Justification::centred);
     }
+};
+
+// botão A/B: compara dois sons (clique alterna; botão direito: copiar para o outro lado / sair)
+class AbButton : public juce::Button
+{
+public:
+    explicit AbButton (SynthKeyProcessor& p) : juce::Button ("A/B"), proc (p) { setTooltip (juce::String (juce::CharPointer_UTF8 ("Comparar A/B: clique alterna entre dois sons (1.\xC2\xBA clique: B come\xC3\xA7" "a igual a A). Bot\xC3\xA3o direito: copiar / sair"))); }
+    void clicked() override { proc.abToggle(); repaint(); }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu()) { juce::Button::mouseDown (e); return; }
+        juce::PopupMenu m; m.addItem (1, juce::String (juce::CharPointer_UTF8 ("Copiar o som atual para o outro lado")), proc.abState() != 0); m.addItem (2, juce::String (juce::CharPointer_UTF8 ("Sair da compara\xC3\xA7\xC3\xA3o (fica o som atual)")), proc.abState() != 0);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int r) { if (r == 1) proc.abCopyToOther(); else if (r == 2) proc.abOff(); repaint(); });
+    }
+    void paintButton (juce::Graphics& g, bool hover, bool) override
+    {
+        const int st = proc.abState(); const bool on = st != 0; auto r = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (on ? theme::accent2().withAlpha (0.28f) : juce::Colour (0xFF13131C)); g.fillRoundedRectangle (r, 7.0f);
+        g.setColour (on ? theme::accent2() : (hover ? theme::dim() : theme::stroke())); g.drawRoundedRectangle (r, 7.0f, 1.0f);
+        g.setFont (theme::font (on ? 13.0f : 10.0f, true)); g.setColour (on ? juce::Colours::white : theme::dim()); g.drawText (st == 0 ? "A/B" : (st == 1 ? "A" : "B"), r.toNearestInt(), juce::Justification::centred);
+    }
+private:
+    SynthKeyProcessor& proc;
 };
 
 class PaletteDot : public juce::Component
@@ -117,15 +142,16 @@ public:
 
         addAndMakeVisible (backdrop); addAndMakeVisible (decor); decor.fn = [this] (juce::Graphics& g) { paintDecor (g); };
         // ---- barra de cima
-        for (auto* b : { (juce::Component*) &undoBtn, (juce::Component*) &redoBtn, (juce::Component*) &prevBtn, (juce::Component*) &presetBtn, (juce::Component*) &nextBtn, (juce::Component*) &menuBtn, (juce::Component*) &orbBtn, (juce::Component*) &helpBtn }) addAndMakeVisible (b);
+        for (auto* b : { (juce::Component*) &undoBtn, (juce::Component*) &redoBtn, (juce::Component*) &prevBtn, (juce::Component*) &presetBtn, (juce::Component*) &nextBtn, (juce::Component*) &menuBtn, (juce::Component*) &orbBtn, (juce::Component*) &helpBtn, (juce::Component*) &abBtn }) addAndMakeVisible (b);
         undoBtn.setTooltip (TX ("Desfazer (Ctrl/Cmd+Z)")); redoBtn.setTooltip (TX ("Refazer (Ctrl/Cmd+Shift+Z)")); helpBtn.setTooltip (TX ("Ajuda e novidades"));
         undoBtn.onClick = [this] { doUndo (true); }; redoBtn.onClick = [this] { doUndo (false); };
         prevBtn.onClick = [this] { proc.stepPreset (-1); }; nextBtn.onClick = [this] { proc.stepPreset (1); };
         presetBtn.onClick = [this] { if (browser.isOpen()) browser.close(); else browser.open(); }; menuBtn.onClick = [this] { showToolsMenu(); };
         orbBtn.onClick = [this] { openDescribe(); }; orbBtn.setTooltip (TX ("Descreve o som em palavras e o SYNTHKEY cria o preset"));
         helpBtn.onClick = [this] { help.open(); };
-        static const char* modeNames[3] = { "F\xC3\x81" "CIL", "AVAN\xC3\x87.", "EXPERT" };
-        for (int i = 0; i < 3; ++i) { auto* b = new ModeBtn (TX (modeNames[i])); modeBtns.add (b); addAndMakeVisible (b); b->onClick = [this, i] { setMode (i + 1); }; }
+        static const char* modeNames[4] = { "TOCAR", "F\xC3\x81" "CIL", "AVAN\xC3\x87.", "EXPERT" };
+        for (int i = 0; i < 4; ++i) { auto* b = new ModeBtn (TX (modeNames[i])); modeBtns.add (b); addAndMakeVisible (b); b->onClick = [this, i] { if (i == 0) setSimple (true); else { setSimple (false); setMode (i); } }; }
+        modeBtns[0]->setTooltip (TX ("Modo simples: escolhe um tipo de som, toca e ajusta as macros \xE2\x80\x94 sem p\xC3\xA1ginas de s\xC3\xADntese"));
         for (int i = 0; i < 6; ++i) { auto* d = new PaletteDot (i, [this] (int k) { setPalette (k); }); dots.add (d); addAndMakeVisible (d); }
         // ---- navegação (em baixo)
         static const char* tabNames[kNumTabs] = { "SOM", "MATRIZ", "MODULAD.", "EFEITOS", "ARP", "VISUAL", "GROOVES", "PACKS", "ADMIN" };
@@ -138,6 +164,8 @@ public:
         // ---- macros + master
         static const char* macroNames[8] = { "BRILHO", "CORPO", "MOVIM.", "ESPAÇO", "LARGURA", "SUJIDADE", "BALANÇO", "DOBRA" };
         for (int i = 0; i < 8; ++i) { auto* k = new Knob (proc, P_MACRO1 + i, TX (macroNames[i])); macros.add (k); addAndMakeVisible (k); }
+        simplePage.reset (new SimplePage (proc, { [this] { browser.open(); }, [this] (const std::string& w) { browser.quickVariation (w); } })); addChildComponent (*simplePage); simplePage->setBounds (0, 46, 1180, 594);
+        simple = proc.getUiInt ("uiSimple", 0) != 0;
         master = std::make_unique<Knob> (proc, P_MASTER_VOL, TX ("VOLUME")); addAndMakeVisible (*master);
         addAndMakeVisible (meter);
         addAndMakeVisible (panic); panic.setButtonText ("PANIC"); panic.onClick = [this] { proc.keyboardState.allNotesOff (1); for (int n = 0; n < 128; ++n) proc.keyboardState.noteOff (1, n, 0.0f); };
@@ -157,7 +185,7 @@ public:
         backdrop.setBounds (0, 0, 1180, 760); decor.setBounds (0, 0, 1180, 760);
         proc.onPresetLoaded = [this] { refreshPresetPill(); };
         refreshPresetPill();
-        setMode (mode); showTab (juce::jlimit (0, kTabAdmin - 1, proc.getUiInt ("uiTab", 0)));
+        setMode (mode); showTab (juce::jlimit (0, kTabAdmin - 1, proc.getUiInt ("uiTab", 0))); setSimple (simple);
         syncAccess(); startTimerHz (30);
         juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<MainView> (this)] { if (sp != nullptr && ! sp->login.isVisible()) sp->help.openIfFirstRun(); });
     }
@@ -188,7 +216,7 @@ public:
         // ---- teclado (cartão)
         theme::drawCard (g, juce::Rectangle<float> (16.0f, 648.0f, 1148.0f, 76.0f), 12.0f);
         // ---- faixa de macros / volume (todos os separadores menos o SOM)
-        if (currentTab != 0)
+        if (currentTab != 0 && ! simple)
         {
             theme::drawCard (g, juce::Rectangle<float> (12.0f, 518.0f, 1156.0f, 122.0f));
             g.setColour (theme::accent()); g.fillEllipse (23.5f, 530.5f, 6.0f, 6.0f); g.setColour (theme::accent().withAlpha (0.25f)); g.fillEllipse (21.0f, 528.0f, 11.0f, 11.0f);
@@ -197,6 +225,7 @@ public:
         }
         // ---- navegação
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xFF1B1B2B), 0, 730.0f, juce::Colour (0xFF0D0D14), 0, 758.0f, false)); g.fillRect (0, 730, 1180, 28); g.setColour (theme::accent().withAlpha (0.45f)); g.drawHorizontalLine (730, 0.0f, 1180.0f);
+        if (simple) { g.setColour (theme::accent().withAlpha (0.9f)); g.setFont (theme::font (11.0f, true)); g.drawText (TX ("MODO TOCAR  \xC2\xB7  para editar o som muda para F\xC3\x81" "CIL, AVAN\xC3\x87. ou EXPERT (canto superior direito)"), 16, 731, 760, 26, juce::Justification::centredLeft); }
         g.setColour (theme::dim()); g.setFont (theme::font (10.0f, true));
         g.drawText (juce::String (proc.voiceCount.load()) + (proc.voiceCount.load() == 1 ? " VOZ" : " VOZES"), 800, 731, 90, 26, juce::Justification::centredRight);
         if (AccessManager::get().isUnlocked())
@@ -221,7 +250,7 @@ private:
     void timerCallback() override
     {
         syncAccess(); proc.undoWatch();
-        if (currentTab < pages.size()) { if (auto* pg = pages[currentTab]) pg->tick(); }
+        if (simple) simplePage->tick(); else if (currentTab < pages.size()) { if (auto* pg = pages[currentTab]) pg->tick(); }
         if (currentTab == kTabAdmin && adminPage) adminPage->tick();
         if (toast.expired()) toast.setVisible (false);
         meter.set (proc.meterL.load(), proc.meterR.load());
@@ -274,13 +303,19 @@ private:
     void layoutTabs()
     {
         static const int widths[kNumTabs] = { 84, 92, 104, 94, 74, 88, 98, 84, 80 };
-        int x = 12; for (int i = 0; i < kNumTabs; ++i) { const bool vis = i < kTabAdmin || adminShown; tabs[i]->setVisible (vis); if (vis) { tabs[i]->setBounds (x, 731, widths[i], 27); x += widths[i]; } }
+        int x = 12; for (int i = 0; i < kNumTabs; ++i) { const bool vis = ! simple && (i < kTabAdmin || adminShown); tabs[i]->setVisible (vis); if (vis) { tabs[i]->setBounds (x, 731, widths[i], 27); x += widths[i]; } }
         logout.setBounds (1096, 734, 64, 20); logout.setVisible (AccessManager::get().isUnlocked());
     }
     // macros / volume / origens: no SOM ficam nos cartões à direita; nos outros separadores, na faixa de baixo
     void layoutBottom()
     {
-        if (currentTab == 0)
+        if (simple)
+        {
+            for (int i = 0; i < 8; ++i) { macros[i]->setBounds (36 + i * 118, 416, 106, 130); macros[i]->toFront (false); }
+            master->setBounds (1000, 416, 96, 130); meter.setBounds (1112, 424, 36, 112); panic.setBounds (1066, 590, 86, 26); modStrip.setVisible (false);
+            master->toFront (false); meter.toFront (false); panic.toFront (false);
+        }
+        else if (currentTab == 0)
         {
             for (int i = 0; i < 8; ++i) macros[i]->setBounds (934 + (i % 4) * 57, 466 + (i / 4) * 52, 56, 52);
             master->setBounds (1000, 585, 64, 54); meter.setBounds (1072, 590, 24, 44); panic.setBounds (1104, 600, 54, 26); modStrip.setVisible (false);
@@ -297,7 +332,7 @@ private:
         if (i == kTabAdmin && ! adminPage) i = 0;
         currentTab = i; proc.setUiInt ("uiTab", std::min (i, kTabAdmin - 1));
         for (int k = 0; k < kNumTabs; ++k) tabs[k]->setToggleState (k == i, juce::dontSendNotification);
-        for (int k = 0; k < pages.size(); ++k) { pages[k]->setBounds (k == 0 ? juce::Rectangle<int> (0, 0, 1180, 640) : juce::Rectangle<int> (12, 58, 1156, 452)); pages[k]->setVisible (k == i); }
+        for (int k = 0; k < pages.size(); ++k) { pages[k]->setBounds (k == 0 ? juce::Rectangle<int> (0, 0, 1180, 640) : juce::Rectangle<int> (12, 58, 1156, 452)); pages[k]->setVisible (! simple && k == i); }
         if (adminPage) adminPage->setVisible (i == kTabAdmin);
         layoutBottom();
         if (auto* pg = i == kTabAdmin ? static_cast<Page*> (adminPage.get()) : pages[i]) pg->tick();
@@ -305,8 +340,16 @@ private:
     }
     void setMode (int m)
     {
-        mode = m; proc.setUiInt ("uiMode", m); for (int i = 0; i < 3; ++i) modeBtns[i]->setToggleState (i + 1 == m, juce::dontSendNotification);
+        mode = m; proc.setUiInt ("uiMode", m); refreshModeButtons();
         for (auto* pg : pages) pg->setMode (m); if (adminPage) adminPage->setMode (m);
+    }
+    void refreshModeButtons() { modeBtns[0]->setToggleState (simple, juce::dontSendNotification); for (int i = 1; i < 4; ++i) modeBtns[i]->setToggleState (! simple && i == mode, juce::dontSendNotification); }
+    void setSimple (bool on)
+    {
+        simple = on; proc.setUiInt ("uiSimple", on ? 1 : 0); refreshModeButtons();
+        simplePage->setVisible (on); if (adminPage && on) adminPage->setVisible (false);
+        layoutTabs(); showTab (currentTab); if (on) simplePage->toFront (false), layoutBottom();
+        decor.repaint(); repaint();
     }
     void setPalette (int i) { theme::paletteIndex() = i; proc.setUiInt ("uiPalette2", i); backdrop.repaint(); for (auto* d : dots) d->repaint(); decor.repaint(); repaint(); }
 
@@ -341,23 +384,24 @@ private:
         });
     }
 
-    SynthKeyProcessor& proc; int mode = 2, currentTab = 0, lastVoices = -1, lastPreview = -1, frame = 0, lastPresetIdx = -2; bool adminShown = false, lastUnlocked = false;
+    SynthKeyProcessor& proc; bool simple = false; std::unique_ptr<SimplePage> simplePage; int mode = 2, currentTab = 0, lastVoices = -1, lastPreview = -1, frame = 0, lastPresetIdx = -2; bool adminShown = false, lastUnlocked = false;
     Backdrop backdrop; Decor decor; IconBtn undoBtn { IconBtn::Undo }, redoBtn { IconBtn::Redo }, prevBtn { IconBtn::Prev }, nextBtn { IconBtn::Next }, menuBtn { IconBtn::Menu }, helpBtn { IconBtn::Help };
-    PresetPill presetBtn; OrbButton orbBtn; juce::TextButton logout, panic;
+    PresetPill presetBtn; OrbButton orbBtn; AbButton abBtn { proc }; juce::TextButton logout, panic;
     juce::OwnedArray<ModeBtn> modeBtns; juce::OwnedArray<PaletteDot> dots; juce::OwnedArray<NavBtn> tabs; juce::OwnedArray<Page> pages; std::unique_ptr<AdminPage> adminPage;
     juce::OwnedArray<Knob> macros; std::unique_ptr<Knob> master; Meter meter; ModSourceStrip modStrip; PerfKeyboard keyboard; WheelStrip pitchWheel, modWheel; KeyTip keyTip;
     Toast toast; PromptOverlay prompt; HelpOverlay help; LoginOverlay login; unsigned describeSeed = 1;
-    PresetBrowser browser { proc, [this] (const juce::String& t, bool e) { toast.show (t, e); } };
+    PresetBrowser browser { proc, [this] (const juce::String& t, bool e) { toast.show (t, e); }, &svc };
 public:
     void layoutHeader()
     {
         undoBtn.setBounds (258, 8, 32, 30); redoBtn.setBounds (292, 8, 32, 30);
-        prevBtn.setBounds (336, 8, 28, 30); presetBtn.setBounds (368, 8, 264, 30); nextBtn.setBounds (636, 8, 28, 30); menuBtn.setBounds (668, 8, 34, 30);
+        prevBtn.setBounds (336, 8, 28, 30); presetBtn.setBounds (368, 8, 232, 30); abBtn.setBounds (604, 8, 28, 30); nextBtn.setBounds (636, 8, 28, 30); menuBtn.setBounds (668, 8, 34, 30);
         orbBtn.setBounds (712, 2, 176, 42); helpBtn.setBounds (890, 8, 30, 30);
-        for (int i = 0; i < 3; ++i) modeBtns[i]->setBounds (928 + i * 50, 11, 48, 24);
-        for (int i = 0; i < 6; ++i) dots[i]->setBounds (1082 + i * 14, 16, 14, 14);
+        for (int i = 0; i < 4; ++i) modeBtns[i]->setBounds (922 + i * 44, 11, 42, 24);
+        for (int i = 0; i < 6; ++i) dots[i]->setBounds (1100 + i * 12, 17, 12, 12);
         layoutTabs();
     }
+    void soundMatch (const juce::File& f) { browser.soundMatch (f); }
     void installFiles (const juce::StringArray& files)
     {
         for (auto& f : files) { const auto err = PackHub::get().install (juce::File (f)); toast.show (err.isEmpty() ? TX ("Pack instalado: ") + juce::File (f).getFileName() : err, err.isNotEmpty()); }
@@ -383,11 +427,12 @@ void SynthKeyEditor::resized()
     view->setTransform (juce::AffineTransform::scale (s)); view->setBounds (0, 0, kW, kH);
     if (ready && getWidth() >= kW / 2) proc.setUiInt ("uiW", getWidth());
 }
+void SynthKeyEditor::soundMatchFile (const juce::File& f) { view->soundMatch (f); }
 bool SynthKeyEditor::isInterestedInFileDrag (const juce::StringArray& files) { for (auto& f : files) if (f.endsWithIgnoreCase (".bfpack") || useraudio::isAudioFile (juce::File (f))) return true; return false; }
 void SynthKeyEditor::filesDropped (const juce::StringArray& files, int, int)
 {
     juce::StringArray packs; juce::File audio;
     for (auto& f : files) { if (f.endsWithIgnoreCase (".bfpack")) packs.add (f); else if (audio == juce::File() && useraudio::isAudioFile (juce::File (f))) audio = juce::File (f); }
     if (packs.size()) view->installFiles (packs);
-    if (audio != juce::File()) ui::showDropMenu (proc, this, audio);
+    if (audio != juce::File()) ui::showDropMenu (proc, this, audio, [this] (const juce::File& f) { view->soundMatch (f); });
 }

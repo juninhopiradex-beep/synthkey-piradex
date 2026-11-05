@@ -110,45 +110,47 @@ inline std::vector<Variation> variations (const Preset& base, const std::string&
 }
 
 // ------------------------------------------------------------------------------------------- macros automáticas
-// Cria macros bipolares (centro 0,5 = som original) nas rotas de modulação livres: cada macro usa 2 rotas
-// (macro·k + constante·(−k/2)), por isso com o botão a meio o preset soa como estava.
+// Atribui às 8 macros de cada preset as ligações PADRÃO (as mesmas etiquetas do painel: BRILHO, CORPO, MOVIM., ESPAÇO, LARGURA, SUJIDADE,
+// BALANÇO, DOBRA), mas escolhendo o destino conforme a arquitectura real do som (filtro, motores, sub, LFO, unisson). Só mexe nas macros
+// que ainda não têm rotas e nas rotas livres. Unipolares: com o botão a 0 o som fica exactamente como estava.
 struct MacroInfo { int index; std::string name; std::string target; };
 inline std::vector<MacroInfo> autoMacros (Preset& p)
 {
     using namespace gen::detail;
     std::vector<MacroInfo> made;
     auto freeSlot = [&] () { for (int s = 0; s < kNumModSlots; ++s) { const int b = modSlotBase (s); if ((int) p.get (b) == 0 || (int) p.get (b + 1) == 0 || std::fabs (p.get (b + 2)) < 1e-4f) return s; } return -1; };
-    struct Cand { const char* name; int dst; float amt; bool ok; };
-    const bool f1 = (int) p.get (P_F1_TYPE) != 0, aOn = p.get (P_A_ON) > 0.5f, bOn = p.get (P_B_ON) > 0.5f;
+    const bool f1 = (int) p.get (P_F1_TYPE) != 0, f2 = (int) p.get (P_F2_TYPE) != 0, aOn = p.get (P_A_ON) > 0.5f, bOn = p.get (P_B_ON) > 0.5f;
     const int ta = aOn ? (int) p.get (P_A_TYPE) : -1;
-    const bool aTone = (ta == 0 || ta == 1 || ta == 5);
-    const int f2t = (int) p.get (P_F2_TYPE);
-    std::vector<Cand> c;
-    c.push_back ({ "Brilho", f1 ? MD_CUT1 : (ta == 1 || ta == 5 ? MD_WTPOS_A : MD_FOLD_A), f1 ? 0.5f : 0.6f, f1 || aTone });
-    c.push_back ({ "Foco", MD_RES1, 0.5f, f1 });
-    c.push_back ({ "Corpo", p.get (P_SUB_LEVEL) > -59.0f ? MD_SUB : MD_UNIDET_A, 0.5f, aOn && (p.get (P_SUB_LEVEL) > -59.0f || (int) p.get (P_A_UNI) > 1) });
-    c.push_back ({ "Textura", ta == 0 ? MD_FM_A : (ta == 1 || ta == 5 ? MD_WARP_A : (ta == 2 ? MD_START_A : MD_FOLD_A)), 0.6f, aOn && ta != 3 && ta != 4 });
-    c.push_back ({ "Movimento", MD_LFO1RATE, 0.5f, false });
-    c.push_back ({ "Energia", MD_DRIVE1, 0.6f, f1 });
-    c.push_back ({ "Camada", bOn ? MD_LEVEL_B : MD_PAN, 0.7f, bOn });
-    c.push_back ({ "Filtro 2", MD_CUT2, 0.5f, f2t != 0 });
-    // Movimento só faz sentido se algum LFO já modula algo
+    const bool subOn = p.get (P_SUB_LEVEL) > -59.0f, uni = aOn && (int) p.get (P_A_UNI) > 1 && (ta == 0 || ta == 1);
     bool lfoUsed = false; for (int s = 0; s < kNumModSlots; ++s) { const int b = modSlotBase (s); if ((int) p.get (b) == MS_LFO1 && (int) p.get (b + 1) != 0 && std::fabs (p.get (b + 2)) > 1e-4f) lfoUsed = true; }
-    for (auto& x : c) if (std::string (x.name) == "Movimento") x.ok = lfoUsed;
-    // macros que o preset já usa ficam intactas: só se atribuem as livres (sem nenhuma rota)
     bool used[kNumMacros] = {};
     for (int s = 0; s < kNumModSlots; ++s) { const int b = modSlotBase (s); const int src = (int) p.get (b); if (src >= MS_MACRO1 && src < MS_MACRO1 + kNumMacros && (int) p.get (b + 1) != 0 && std::fabs (p.get (b + 2)) > 1e-4f) used[src - MS_MACRO1] = true; }
-    auto nextMacro = [&] () { for (int k = 0; k < kNumMacros; ++k) if (! used[k]) return k; return -1; };
-    for (auto& x : c)
+    // ESPAÇO precisa de um reverb no AUX: se o AUX está vazio, instala um (envio a 0: não muda o som)
+    const bool auxFree = (int) p.get (fxSlotBase (6)) == 0 && (int) p.get (fxSlotBase (7)) == 0 && (int) p.get (fxSlotBase (8)) == 0;
+    bool auxReverb = false; for (int k = 6; k < 9; ++k) if ((int) p.get (fxSlotBase (k)) == 6) auxReverb = true;
+    struct Cand { const char* name; int dst; float amt; bool ok; };
+    const Cand c[kNumMacros] = {
+        { "BRILHO",   f1 ? MD_CUT1 : (ta == 1 || ta == 5 ? MD_WTPOS_A : MD_FOLD_A), 0.5f, f1 || ta == 0 || ta == 1 || ta == 5 },
+        { "CORPO",    subOn ? MD_SUB : (f1 ? MD_RES1 : MD_UNIDET_A), subOn ? 0.5f : 0.35f, subOn || f1 || uni },
+        { "MOVIM.",   MD_LFO1RATE, 0.5f, lfoUsed },
+        { "ESPAÇO",   MD_SENDA, 0.6f, auxReverb || auxFree },
+        { "LARGURA",  MD_UNIDET_A, 0.5f, uni },
+        { "SUJIDADE", MD_DRIVE1, 0.5f, f1 },
+        { "BALANÇO",  MD_FILTBAL, 0.5f, f1 && f2 },
+        { "DOBRA",    ta == 1 || ta == 5 ? MD_WARP_A : MD_FOLD_A, 0.4f, ta == 0 || ta == 1 || ta == 5 },
+    };
+    for (int m = 0; m < kNumMacros; ++m)
     {
-        const int m = nextMacro(); if (m < 0) break;
-        if (! x.ok) continue;
+        if (used[m] || ! c[m].ok) continue;
         const int s1 = freeSlot(); if (s1 < 0) break;
-        putMod (p, s1, MS_MACRO1 + m, x.dst, x.amt);
-        const int s2 = freeSlot(); if (s2 < 0) { putMod (p, s1, 0, 0, 0.0f); break; }
-        putMod (p, s2, MS_CONST, x.dst, -x.amt * 0.5f);
-        p.set (P_MACRO1 + m, 0.5f); used[m] = true;
-        made.push_back ({ m + 1, x.name, kModDstNames[x.dst] });
+        if (m == 3 && ! auxReverb)
+        {
+            const int fb = fxSlotBase (6); p.set (fb, 6.0f); p.set (fb + 1, 0.5f); p.set (fb + 2, 0.55f); p.set (fb + 3, 0.45f); p.set (fb + 4, 0.1f); p.set (fb + 5, 0.9f); p.set (fb + 6, 1.0f);
+            p.set (P_AUX_RETURN, 0.0f); auxReverb = true;
+        }
+        putMod (p, s1, MS_MACRO1 + m, c[m].dst, c[m].amt);
+        p.set (P_MACRO1 + m, 0.0f);
+        made.push_back ({ m + 1, c[m].name, kModDstNames[c[m].dst] });
     }
     return made;
 }

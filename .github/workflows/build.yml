@@ -36,6 +36,8 @@ jobs:
           ./test_fx_new
           g++ -O2 -std=c++17 -pthread -ISource tests/test_assist.cpp -o test_assist
           ./test_assist
+          g++ -O2 -std=c++17 -ISource tests/test_update.cpp -o test_update
+          ./test_update
           g++ -O2 -std=c++17 -ISource tests/test_stretch.cpp -o test_stretch
           ./test_stretch
           g++ -O2 -std=c++17 -pthread -ISource tests/test_loops.cpp -o test_loops

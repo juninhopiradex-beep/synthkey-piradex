@@ -16,6 +16,7 @@ public:
     void resized() override;
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int, int) override;
+    void soundMatchFile (const juce::File& f);             // Sound Match a partir de um WAV (também usado ao largar um ficheiro)
     SynthKeyProcessor& proc;
 private:
     SynthLook look;

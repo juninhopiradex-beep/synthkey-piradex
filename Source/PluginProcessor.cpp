@@ -467,6 +467,18 @@ void SynthKeyProcessor::applySnapshot (const Snapshot& s)
     if (getSampleId (0) != s.a) setSampleId (0, s.a);
     if (getSampleId (1) != s.b) setSampleId (1, s.b);
 }
+void SynthKeyProcessor::abToggle()
+{
+    abSlot[abCur] = takeSnapshot(); abNameStr[abCur] = presetName; abIdx[abCur] = currentPreset;
+    if (! abOn) { abOn = true; abSlot[1 - abCur] = abSlot[abCur]; abNameStr[1 - abCur] = presetName; abIdx[1 - abCur] = currentPreset; abCur = 1 - abCur; }
+    else { abCur = 1 - abCur; applySnapshot (abSlot[abCur]); presetName = abNameStr[abCur]; currentPreset = abIdx[abCur]; }
+    if (onPresetLoaded) onPresetLoaded();
+}
+void SynthKeyProcessor::abCopyToOther()
+{
+    if (! abOn) return;
+    abSlot[1 - abCur] = takeSnapshot(); abNameStr[1 - abCur] = presetName; abIdx[1 - abCur] = currentPreset;
+}
 void SynthKeyProcessor::undoWatch()
 {
     if (! haveCommitted) { committed = takeSnapshot(); haveCommitted = true; return; }

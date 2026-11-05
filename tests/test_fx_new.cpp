@@ -126,6 +126,23 @@ int main()
         CHECK (rms (L, (size_t) (0.3 * SR), (size_t) (1.0 * SR)) > 1.0e-3f, "convolução sem cauda audível (%g)", rms (L, 14400, 48000));
         p[0] = 0.9f; auto L2 = L, R2 = R; runFx (fx, FxUnit::Convolve, p, 0.5f, L2, R2); bool fin = true; for (float v : L2) if (! std::isfinite (v)) fin = false; CHECK (fin, "troca de IR: não finito");
     }
+    // ---------------- robustez: cantos dos parâmetros e independência do tamanho do bloco ----------------
+    for (int type : { (int) FxUnit::Transient, (int) FxUnit::Sidechain, (int) FxUnit::Convolve })
+    {
+        const int N = 20000; Rng rg; rg.seed (11u + (uint32_t) type); std::vector<float> xl ((size_t) N), xr ((size_t) N); for (int i = 0; i < N; ++i) { xl[(size_t) i] = 0.9f * rg.bi(); xr[(size_t) i] = 0.9f * rg.bi(); }
+        float worst = 0; bool fin = true;
+        for (int mask = 0; mask < 32; ++mask)
+        {
+            float p[5]; for (int k = 0; k < 5; ++k) p[k] = (mask >> k) & 1 ? 1.0f : 0.0f;
+            FxUnit fx; fx.prepare (SR, 512); auto l = xl, r = xr; runFx (fx, type, p, 1.0f, l, r, 0.0, 140.0f, 480);
+            for (int i = 0; i < N; ++i) { if (! std::isfinite (l[(size_t) i]) || ! std::isfinite (r[(size_t) i])) fin = false; worst = std::max (worst, std::max (std::fabs (l[(size_t) i]), std::fabs (r[(size_t) i]))); }
+        }
+        CHECK (fin, "tipo %d: valores não finitos nos cantos dos parâmetros", type); CHECK (worst < (type == (int) FxUnit::Transient ? 16.0f : (type == (int) FxUnit::Convolve ? 8.0f : 1.0f)), "tipo %d: saída fora do limite teórico %.2f (transientes: +12 dB do efeito + 12 dB de saída = 14,3 com entrada 0,9)", type, worst);
+        const float pm[5] = { 0.7f, 0.3f, 0.6f, 0.4f, 0.8f }; FxUnit a, b; a.prepare (SR, 512); b.prepare (SR, 512); auto l1 = xl, r1 = xr, l2 = xl, r2 = xr;
+        runFx (a, type, pm, 1.0f, l1, r1, 3.25, 120.0f, 512); runFx (b, type, pm, 1.0f, l2, r2, 3.25, 120.0f, 37);
+        double md = 0; for (int i = 0; i < N; ++i) md = std::max (md, (double) std::fabs (l1[(size_t) i] - l2[(size_t) i]));
+        CHECK (md < 2.0e-4, "tipo %d: resultado depende do tamanho do bloco (%g)", type, md);
+    }
     std::printf ("test_fx_new: %d verificações, %d falhas\n", checks, fails);
     return fails ? 1 : 0;
 }

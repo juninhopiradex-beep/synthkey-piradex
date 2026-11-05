@@ -197,7 +197,7 @@ public:
             { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" }, { "DIVISÃO", "FEEDBACK", "TOM", "PING-PONG", "PONTUADO" },
             { "TAXA", "PROF.", "FEEDBACK", "ATRASO", "ESPALHAR" }, { "TAXA", "PROF.", "ATRASO", "BRILHO", "LARGURA" }, { "TAMANHO", "DECAIM.", "ABAFAR", "SHIMMER", "LARGURA" },
             { "TEMPO", "ESPALHAR", "FEEDBACK", "TOM", "ESTÉREO" }, { "SEMITONS", "FINO", "GRÃO", "FEEDBACK", "DESAFINAR" },
-            { "ATAQUE", "SUSTENT.", "VELOC.", "SAÍDA", "SUAVIZ." }, { "DIVISÃO", "PROFUND.", "LIBERT.", "CURVA", "NOTAS ◂ ▸ TEMPO" }, { "IR", "PRÉ-DELAY", "TOM", "TAMANHO", "LARGURA" } };
+            { "ATAQUE", "SUSTENT.", "VELOC.", "SAÍDA", "SUAVIZ." }, { "DIVISÃO", "PROFUND.", "LIBERT.", "CURVA", "MODO" }, { "IR", "PRÉ-DELAY", "TOM", "TAMANHO", "LARGURA" } };
         const int t = juce::jlimit (0, 19, (int) proc.getReal (base));
         for (int i = 0; i < 5; ++i)
         {

@@ -3,6 +3,7 @@
 // =============================================================================
 #pragma once
 #include "Pages1.h"
+#include "../PackUpdater.h"
 #include "StudioUI.h"
 
 namespace ui
@@ -246,12 +247,30 @@ public:
         install.setBounds (0, 428, 230, 24); folder.setBounds (238, 428, 200, 24);
         install.onClick = [this] { chooseFile(); };
         folder.onClick = [] { skpaths::userPacks().revealToUser(); };
+        folder.setTooltip (TX ("Arraste ficheiros .bfpack para a janela do plugin \xC2\xB7 ") + skpaths::userPacks().getFullPathName());
+        // ---- atualizacoes dos packs instalados
+        updBtn.setButtonText (TX ("VERIFICAR ATUALIZA\xC3\x87\xC3\x95" "ES")); updAll.setButtonText (TX ("ATUALIZAR"));
+        autoTgl.setButtonText (TX ("instalar sozinho")); autoTgl.setToggleState (PackUpdater::get().autoInstall(), juce::dontSendNotification);
+        autoTgl.setTooltip (TX ("Descarrega e instala as atualiza\xC3\xA7\xC3\xB5" "es dos packs que j\xC3\xA1 tens (verifica integridade SHA-256 e assinatura do pack)"));
+        for (auto* c : { (juce::Component*) &updBtn, (juce::Component*) &autoTgl, (juce::Component*) &updAll }) addAndMakeVisible (c);
+        updBtn.setBounds (446, 428, 200, 24); autoTgl.setBounds (652, 428, 130, 24); updAll.setBounds (1066, 428, 90, 24); updAll.setVisible (false);
+        updBtn.onClick = [] { PackUpdater::get().checkNow (false); };
+        autoTgl.onClick = [this] { PackUpdater::get().setAutoInstall (autoTgl.getToggleState()); };
+        updAll.onClick = [] { for (auto& q : PackUpdater::get().status().pending) if (! q.isNew) { PackUpdater::get().installPending (q); break; } };
+        PackUpdater::get().startupCheck();
     }
-    void tick() override { ++ticks; if (ticks % 10 == 1) { if ((int) PackHub::get().entries().size() != cards.size()) populate(); for (auto* c : cards) c->refresh(); } }
+    void tick() override
+    {
+        ++ticks; if (ticks % 10 == 1) { if ((int) PackHub::get().entries().size() != cards.size()) populate(); for (auto* c : cards) c->refresh(); }
+        const auto st = PackUpdater::get().status(); const auto sig = st.message + std::to_string (st.percent) + std::to_string ((int) st.state) + std::to_string (st.pending.size());
+        if (sig != updSig) { updSig = sig; int n = 0; for (auto& q : st.pending) if (! q.isNew) ++n; updAll.setVisible (n > 0 && st.state != PackUpdater::Status::Downloading); updAll.setButtonText (TX ("ATUALIZAR ") + juce::String (n)); repaint(); }
+    }
     void paint (juce::Graphics& g) override
     {
-        g.setColour (theme::dim()); g.setFont (theme::font (11.5f));
-        g.drawText (TX ("Arraste ficheiros .bfpack para a janela do plugin \xC2\xB7 ") + skpaths::userPacks().getFullPathName(), 450, 428, getWidth() - 450, 24, juce::Justification::centredLeft);
+        const auto st = PackUpdater::get().status();
+        g.setColour (st.state == PackUpdater::Status::Error ? theme::bad() : (st.pending.empty() ? theme::dim() : theme::good())); g.setFont (theme::font (11.5f));
+        juce::String msg = TX (st.message.c_str()); if (st.state == PackUpdater::Status::Downloading) msg << " " << st.percent << "%";
+        g.drawText (msg, 790, 428, 270, 24, juce::Justification::centredRight);
     }
     void rebuildIfNeeded()
     {
@@ -281,7 +300,7 @@ private:
             self->rebuildIfNeeded();
         });
     }
-    Services& svc; juce::Viewport vp; juce::Component content; juce::OwnedArray<PackCard> cards; juce::TextButton install, folder; std::shared_ptr<juce::FileChooser> chooser; int ticks = 0;
+    Services& svc; juce::Viewport vp; juce::Component content; juce::OwnedArray<PackCard> cards; juce::TextButton install, folder, updBtn, updAll; juce::ToggleButton autoTgl; std::string updSig; std::shared_ptr<juce::FileChooser> chooser; int ticks = 0;
 };
 
 // ======================================================================================= ADMIN

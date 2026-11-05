@@ -140,3 +140,29 @@ a ativação online está prevista para a v1.1.
   * *Envios A/B por voz tirados antes dos inserts:* é uma escolha de desenho (permite modulação de envio por tecla/voz, que um envio pós-inserts, feito sobre o barramento somado, não permite).
 * **Teste da Corda:** a janela de cauda (1,5–2,0 s) ultrapassava o vector renderizado (leitura fora dos limites); corrigido (200 blocos).
 * **Regenerar:** `packgen curate Source/Core/GenCurated.h 0.6` (≈9 min) e depois `packgen gains Source/Core/NucleoGains.h`. Um teste falha se um ganho curado estiver desactualizado.
+
+## v1.7.0 (em desenvolvimento) — "top 5": navegador inteligente, efeitos novos, assistente, modo TOCAR, atualizações de packs
+
+**Navegador de presets** (`Source/UI/Browser.h`)
+* **Avaliação 1–5 estrelas** por preset (ficheiro `avaliacoes.txt` na pasta do utilizador), favoritos (♥), ordenação (nome, melhor avaliação, favoritos, CPU leve) e filtro por estrelas.
+* **PARECIDOS** (pesquisa por semelhança sonora): mede o som **atual** (render real, 8 características: centroide cedo/tarde, ataque, queda, cauda, largura, graves, ruído) e ordena os 3 480 presets por distância. A tabela de impressões digitais (`Core/PresetFp.h`, gerada por `packgen fingerprints`) é verificada por teste contra uma remedição.
+* **PARA TI** (recomendações): presets próximos dos teus favoritos e dos que avaliaste com ≥3 estrelas (peso = estrelas − 2, favorito +1,5).
+* **SOUND MATCH**: escolhe um WAV de referência (ou larga-o na janela) → mesma impressão digital → presets mais próximos.
+  Validação: renderizando 60 presets com ganho e silêncio inicial arbitrários, o preset de origem fica em **1.º em 53/60 e no top-3 em 55/60**. *Limite:* mede timbre/envelope, não altura nem ritmo; áudio com ruído de fundo ou música completa dá resultados pouco fiáveis (funciona melhor com uma nota, um sample ou um loop curto e limpo).
+* **Filtros de tempo e tom:** "Sincroniza ao tempo" (arpejador ou delay sincronizado) e "Acorde maior / menor / diatónico / nota única". *Honestidade:* os presets **não têm BPM nem tonalidade fixos** (são sons, não loops); estes filtros derivam dos parâmetros reais — não há filtro por BPM numérico.
+* **A/B**: botão A/B na barra de cima (clique alterna; botão direito copia/sai). B começa igual a A; carregar outro preset em B não perde A. Não é guardado no projeto.
+* **Preset DNA** (`Core/PresetDna.h`): motores, osciladores por nota, cadeia de efeitos, rotas de modulação/macros, arpejador/acordes, tonalidade, sincronização, samples e **pack de que depende**, e uma estimativa de CPU (leve/médio/pesado) — calculado dos parâmetros reais, por isso nunca fica desatualizado. Aparece no painel direito do navegador.
+* **ASSISTENTE** (`Core/SoundAssist.h`): descreve a mudança (PT/EN: escuro, brilhante, largo, curto, quente, movimento, catedral, lo-fi, camada…) e recebe 8 variações **calibradas** do som atual. Usa o mesmo gerador que produziu a biblioteca de fábrica (`gen::derive`). Medido: «escuro» baixa o centroide em média −0,17 oitavas e «brilhante» sobe +0,13. *Limite:* é um mapeador de palavras-chave, **não** um modelo de linguagem; palavras desconhecidas dão variações livres.
+* **CAMADA** (Smart Layer Builder): sugere parceiros que completam o timbre (centroide/ataque/graves diferentes, sem gémeos) e junta os dois sons no motor B (empilhados ou divididos no Dó central), calibrando o ganho. Só funciona se o som atual usar apenas o motor A.
+* **MACROS AUTO**: atribui às macros livres as ligações padrão (BRILHO, CORPO, MOVIM., ESPAÇO, LARGURA, SUJIDADE, BALANÇO, DOBRA) escolhendo o destino conforme a arquitectura real do som; unipolares (a 0 o som não muda — verificado). Os presets de fábrica já trazem as 8 macros, por isso isto serve para sons do utilizador/importados.
+
+**3 efeitos novos** (tipos 17–19 em todos os 9 slots)
+* **Transientes**: dois seguidores de envolvente (rápido; lento = o rápido suavizado) → ataque e sustentação ±12 dB; um sinal estacionário passa sem alteração (verificado ±0,6 dB).
+* **Sidechain interno**: abaixamento por **tempo** (1/16…compasso, alinhado ao ppq do anfitrião) ou por **notas** tocadas no próprio plugin. *Não há entrada de sidechain externa* (o formato VST3 do plugin tem só a saída principal).
+* **Convolução**: reverb por convolução particionada em FFT com **6 respostas ao impulso geradas por procedimento** (Quarto, Sala, Hall, Placa, Catedral, Mola), pré-delay, tom, tamanho e largura. Latência do molhado = 1 bloco (≈10,7 ms, que funciona como pré-atraso); o seco não é atrasado. Verificada contra convolução direta (erro < 2·10⁻³). *Limite:* **não carrega IR do utilizador** e as IR são sintéticas (não gravações de espaços reais).
+
+**Modo TOCAR** (modo simples): botão "TOCAR" na barra de cima. Esconde as páginas de síntese: cartão do preset, ◀ ▶ dentro de uma categoria (14 botões grandes: favoritos, para ti, teclas, pads, baixos…), variação rápida (escuro/brilhante/largo/curto/quente/movimento), 8 macros grandes e volume.
+
+**Atualizações de packs** (`Source/PackUpdater.h`, `Core/PackUpdate.h`, `docs/PACKS.md`): verificação diária do manifesto + botão "VERIFICAR ATUALIZAÇÕES" no separador PACKS; só atualiza packs **já instalados**; SHA-256 obrigatório no manifesto e assinatura do pack validada antes de instalar; opção "instalar sozinho". *Não testado contra um servidor real:* a lógica de manifesto/versões está coberta por teste (`test_update`), mas o download só pode ser validado quando o manifesto e os packs estiverem publicados; no Linux precisa de libcurl (`JUCE_USE_CURL=1`).
+
+**Testes novos:** `test_fx_new` (96 verificações), `test_assist` (≈11 900: tabela, vizinhança, recomendações, Sound Match, DNA, assistente, macros, camadas), `test_update` (13).

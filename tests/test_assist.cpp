@@ -163,8 +163,8 @@ int main()
             for (int sl = 0; sl < kNumModSlots; ++sl) { const int b = modSlotBase (sl); const int src = (int) p.get (b); if (src >= MS_MACRO1 && src < MS_MACRO1 + kNumMacros) { p.set (b, 0.0f); p.set (b + 1, 0.0f); p.set (b + 2, 0.0f); } }
             for (int k = 0; k < kNumMacros; ++k) p.set (P_MACRO1 + k, 0.0f);
             const Preset orig = p; auto made = assist::autoMacros (p); if (made.empty()) continue; ++withMacros;
-            for (auto& m : made) CHECK (m.index >= 1 && m.index <= kNumMacros && std::fabs (p.get (P_MACRO1 + m.index - 1) - 0.5f) < 1e-6f, "macro %d deve ficar a 0,5", m.index);
-            // som: macros a 0,5 = original (diferença numérica mínima); macros a 1,0 = som diferente
+            for (auto& m : made) CHECK (m.index >= 1 && m.index <= kNumMacros && std::fabs (p.get (P_MACRO1 + m.index - 1)) < 1e-6f, "macro %d deve ficar a 0", m.index);
+            // som: macros a 0 = original (diferença numérica mínima); macros a 1,0 = som diferente
             std::vector<float> L0, R0, L1, R1, L2, R2; renderAudio (orig, nuc, L0, R0, 44100.0, 0, 1.0f, 60); renderAudio (p, nuc, L1, R1, 44100.0, 0, 1.0f, 60);
             double dmax = 0, pmax = 1e-9; for (size_t k = 0; k < L0.size(); ++k) { dmax = std::max (dmax, (double) std::fabs (L0[k] - L1[k])); pmax = std::max (pmax, (double) std::fabs (L0[k])); }
             worstNeutral = std::max (worstNeutral, dmax / pmax); if (dmax / pmax < 0.01) ++neutral;
@@ -172,11 +172,11 @@ int main()
             double dd = 0; for (size_t k = 0; k < L0.size(); ++k) dd += std::fabs (L0[k] - L2[k]); dd /= (double) L0.size(); double ee = 0; for (float v : L0) ee += std::fabs (v); ee /= (double) L0.size();
             if (dd / std::max (ee, 1e-9) > 0.05) ++active;
         }
-        std::printf ("  Macros automáticas: %d/%d presets receberam macros; neutras a 0,5: %d; audíveis a 1,0: %d; pior desvio neutro %.4f\n", withMacros, tried, neutral, active, worstNeutral);
+        std::printf ("  Macros automáticas: %d/%d presets receberam macros; neutras a 0: %d; audíveis a 1,0: %d; pior desvio neutro %.4f\n", withMacros, tried, neutral, active, worstNeutral);
         CHECK (withMacros >= tried * 3 / 4, "poucos presets receberam macros: %d/%d", withMacros, tried);
         { Preset f = nucleo[40]; int before = 0; for (int sl = 0; sl < kNumModSlots; ++sl) { const int src = (int) f.get (modSlotBase (sl)); if (src >= MS_MACRO1 && src < MS_MACRO1 + kNumMacros) ++before; }
-          auto mk = assist::autoMacros (f); std::printf ("  preset de fábrica com %d rotas de macro: autoMacros acrescentou %zu\n", before, mk.size()); CHECK (before == 0 || mk.empty() || mk[0].index > 1, "não pode reatribuir macros já usadas"); }
-        CHECK (neutral == withMacros, "macros a 0,5 não neutras (pior %.4f)", worstNeutral);
+          auto mk = assist::autoMacros (f); std::printf ("  preset de fábrica com %d rotas de macro: autoMacros acrescentou %zu\n", before, mk.size()); CHECK (before == 8 ? mk.empty() : true, "preset de fábrica já tem as 8 macros: nada a acrescentar"); }
+        CHECK (neutral == withMacros, "macros a 0 não neutras (pior %.4f)", worstNeutral);
         CHECK (active >= withMacros * 3 / 4, "macros a 1,0 pouco audíveis: %d/%d", active, withMacros);
     }
     // ================= Layer Builder =================
