@@ -5,11 +5,13 @@
 //    packgen packs  <pasta_saída> <pasta_capas> <segredo_hex | -> [id_do_pack ...]
 //    packgen gains  <ficheiro_saída.h>                      (calibra os presets do Núcleo)
 //    packgen presets <pasta_saída>                          (exporta todos os presets em .skpreset, p/ inspeção)
+//    packgen fingerprints <PresetFp.h>                      (impressões digitais sonoras de todos os presets — Sound Match / semelhança)
 //    packgen curate <GenCurated.h> [eps]                    (gera e cura as variações de presets: mede, rejeita iguais, calibra)
 // =============================================================================
 #include "Core/PackIO.h"
 #include "Core/PresetBuilder.h"
 #include "Core/PresetCalib.h"
+#include "Core/SoundSearch.h"
 #if __has_include("Secrets.h")
  #include "Secrets.h"
  #define SK_HAVE_SECRETS 1
@@ -117,6 +119,27 @@ int main (int argc, char** argv)
     const Library nuc = nucleoLib (defs);
 
     if (mode == "curate") return runCurate (argv[2], argc > 3 ? (float) std::atof (argv[3]) : 0.6f, defs, nuc);
+    if (mode == "fingerprints")
+    {
+        struct Row { uint32_t key; presets::Fingerprint f; std::string name; };
+        std::vector<Row> rows; const unsigned nth = std::max (1u, std::thread::hardware_concurrency());
+        for (auto& d : defs)
+        {
+            Library lib; lib.appendShared (nuc); if (! d.core) buildPackLibrary (d, lib);
+            auto list = presets::forPack (d.id); std::vector<Row> part (list.size());
+            std::atomic<size_t> next { 0 }; std::vector<std::thread> th;
+            for (unsigned t = 0; t < nth; ++t) th.emplace_back ([&] { for (size_t i; (i = next++) < list.size();) { Preset q = list[i]; part[i].key = search::presetKey (q.pack, q.name); part[i].name = q.name; if (q.module.empty()) presets::measure (q, lib, &part[i].f); } });
+            for (auto& t : th) t.join();
+            for (auto& r : part) if (r.f.ok) rows.push_back (r);
+            std::printf ("  %-10s %zu impressões digitais\n", d.id.c_str(), list.size()); std::fflush (stdout);
+        }
+        std::sort (rows.begin(), rows.end(), [] (const Row& a, const Row& b) { return a.key < b.key; });
+        for (size_t i = 1; i < rows.size(); ++i) if (rows[i].key == rows[i - 1].key) { std::fprintf (stderr, "colisão de chave: %s / %s\n", rows[i].name.c_str(), rows[i - 1].name.c_str()); return 1; }
+        std::string out = "// GERADO por tools/packgen (modo fingerprints) — impressões digitais sonoras dos presets de fábrica. NÃO EDITAR À MÃO.\n#pragma once\n#include <cstddef>\n#include <cstdint>\nnamespace sk { namespace search\n{\nstruct FpRow { uint32_t key; float v[8]; };\ninline constexpr FpRow kPresetFp[] = {\n";
+        for (auto& r : rows) { char b[300]; std::snprintf (b, sizeof b, "    { %uu, { %.4ff, %.4ff, %.4ff, %.4ff, %.4ff, %.4ff, %.4ff, %.4ff } },\n", r.key, (double) r.f.v[0], (double) r.f.v[1], (double) r.f.v[2], (double) r.f.v[3], (double) r.f.v[4], (double) r.f.v[5], (double) r.f.v[6], (double) r.f.v[7]); out += b; }
+        out += "    { 0u, { 0, 0, 0, 0, 0, 0, 0, 0 } }\n};\ninline constexpr size_t kPresetFpN = " + std::to_string (rows.size()) + ";\n}} // namespace sk::search\n";
+        spit (argv[2], out); std::printf ("%zu impressões digitais em %s\n", rows.size(), argv[2]); return 0;
+    }
     if (mode == "gains")
     {
         auto list = presets::forPackHand ("nucleo");

@@ -5,6 +5,7 @@
 // =============================================================================
 #pragma once
 #include "Dsp.h"
+#include "Convolver.h"
 
 namespace sk
 {
@@ -46,7 +47,7 @@ struct PitchShifter
 class FxUnit
 {
 public:
-    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem, DelaySync, Flanger, Ensemble, Shimmer, MultiTap, Pitch };
+    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem, DelaySync, Flanger, Ensemble, Shimmer, MultiTap, Pitch, Transient, Sidechain, Convolve };
 
     void prepare (float sampleRate, int maxBlock)
     {
@@ -63,10 +64,15 @@ public:
         for (int i = 0; i < 8; ++i) { baseLen[i] = (int) ((float) base[i] * scale); rv[i].allocate ((int) ((float) baseLen[i] * 1.7f) + 64); }
         static const int apl[6] = { 142, 107, 379, 277, 89, 233 };
         for (int i = 0; i < 6; ++i) { rvAp[i].allocate ((int) ((float) apl[i] * scale) + 4); rvApLen[i] = (int) ((float) apl[i] * scale); }
+        conv.prepare (sr);
         reset();
     }
+    // sincronização do Sidechain: posição do projeto (tempos) no início do bloco; noteOn() reinicia o abaixamento no modo "Notas"
+    void setBeat (double ppq) { ppq0 = ppq; }
+    void noteOn() { trigPending = true; }
     void reset()
     {
+        conv.reset(); duckT = 1.0e9f; duckG = 1.0f; trigPending = false; tsF = tsS = 0; tsG = 1.0f;
         for (auto& d : dl) d.clear(); for (auto& d : er) d.clear(); for (auto& d : ch) d.clear(); for (auto& d : pre) d.clear();
         for (auto& d : rv) d.clear(); for (auto& d : rvAp) d.clear();
         for (auto& v : rvLp) v = 0; for (auto& b : eq) for (auto& x : b) x.reset();
@@ -103,6 +109,9 @@ public:
             case Shimmer: doShimmer (p, L, R, n); break;
             case MultiTap: doMultiTap (p, L, R, n); break;
             case Pitch: doPitch (p, L, R, n); break;
+            case Transient: doTransient (p, L, R, n); break;
+            case Sidechain: doDuck (p, L, R, n, bpm); break;
+            case Convolve: doConv (p, L, R, n); break;
             default: break;
         }
         if (needDry)
@@ -129,6 +138,71 @@ private:
             float* x = c ? R : L;
             for (int i = 0; i < n; ++i) x[i] = eq[c][2].tick (eq[c][1].tick (eq[c][0].tick (x[i])));
         }
+    }
+
+    // ---- Transientes: dois seguidores de envolvente (rápido/lento); a diferença em dB separa ataque de sustentação ----------
+    //  p0 ataque ±12 dB · p1 sustentação ±12 dB · p2 velocidade (escala dos tempos) · p3 saída ±12 dB · p4 suavização do ganho.
+    //  Tudo a 0,5 = neutro. Sinais estacionários (d≈0) passam sem alteração.
+    float tsF = 0, tsS = 0, tsG = 1.0f;
+    void doTransient (const float* p, float* L, float* R, int n)
+    {
+        const float atk = mapLin (p[0], -12, 12), sus = mapLin (p[1], -12, 12), spd = mapLog (p[2], 0.4f, 2.5f), out = dbToGain (mapLin (p[3], -12, 12));
+        const float fa = std::exp (-1.0f / (0.001f * 0.8f * spd * sr)), fr = std::exp (-1.0f / (0.001f * 45.0f * spd * sr));
+        const float sa = std::exp (-1.0f / (0.001f * 30.0f * spd * sr));                           // o lento é o rápido suavizado: em regime estacionário os dois coincidem (d = 0)
+        const float gs = std::exp (-1.0f / (0.001f * mapLog (p[4], 0.3f, 6.0f) * sr));
+        for (int i = 0; i < n; ++i)
+        {
+            const float x = std::max (std::fabs (L[i]), std::fabs (R[i])) + 1.0e-9f;
+            tsF = x > tsF ? fa * tsF + (1 - fa) * x : fr * tsF + (1 - fr) * x;
+            tsS = sa * tsS + (1 - sa) * tsF;
+            const float d = 8.685889638f * std::log ((tsF + 1.0e-7f) / (tsS + 1.0e-7f));            // dB: >0 no ataque, <0 na queda
+            const float gdb = atk * clampf (d / 6.0f, 0.0f, 1.0f) + sus * clampf (-d / 3.0f, 0.0f, 1.0f);
+            const float g = dbToGain (gdb);
+            tsG = g + (tsG - g) * gs;
+            L[i] *= tsG * out; R[i] *= tsG * out;
+        }
+    }
+
+    // ---- Sidechain interno: abaixamento do nível por tempo (alinhado ao compasso do anfitrião) ou por notas ----------------
+    //  p0 divisão (1/16 · 1/8 · 1/4 · 1/2 · compasso) · p1 profundidade · p2 libertação · p3 curva · p4 fonte (≥0,5 = tempo, <0,5 = notas).
+    //  Não há entrada de sidechain externa: o gatilho é o relógio do projeto ou as notas tocadas neste instrumento.
+    float duckT = 1.0e9f, duckG = 1.0f; double ppq0 = 0; bool trigPending = false;
+    void doDuck (const float* p, float* L, float* R, int n, float bpm)
+    {
+        static const float divs[5] = { 0.25f, 0.5f, 1.0f, 2.0f, 4.0f };
+        const float div = divs[(int) std::lround (clampf (p[0], 0.0f, 1.0f) * 4.0f)];
+        const float gMin = std::max (0.001f, 1.0f - clampf (p[1], 0.0f, 1.0f)), rel = mapLog (p[2], 0.02f, 0.8f), curve = mapLog (p[3], 0.35f, 3.0f);
+        const bool tempo = p[4] >= 0.5f; const float sm = std::exp (-1.0f / (0.0012f * sr));
+        const double beatsPerSample = (double) std::max (20.0f, bpm) / (60.0 * (double) sr);
+        if (! tempo && trigPending) duckT = 0.0f;
+        trigPending = false;
+        for (int i = 0; i < n; ++i)
+        {
+            float t;
+            if (tempo) { const double b = ppq0 + (double) i * beatsPerSample; t = (float) ((b - std::floor (b / div) * div) * 60.0 / std::max (20.0f, bpm)); }
+            else { t = duckT; duckT += 1.0f / sr; }
+            const float r = std::min (1.0f, t / rel);
+            const float target = gMin + (1.0f - gMin) * std::pow (r, curve);
+            duckG = target + (duckG - target) * sm;
+            L[i] *= duckG; R[i] *= duckG;
+        }
+    }
+
+    // ---- Convolução: IR procedurais (Quarto/Sala/Hall/Placa/Catedral/Mola), convolução particionada em FFT -----------------
+    //  p0 IR · p1 pré-delay · p2 tom (inclinação ±9 dB) · p3 tamanho (fração da IR) · p4 largura.  Latência do molhado = 1 bloco (≈10,7 ms).
+    Convolver conv;
+    void doConv (const float* p, float* L, float* R, int n)
+    {
+        const int ir = (int) std::lround (clampf (p[0], 0.0f, 1.0f) * (float) (kConvNumIr - 1));
+        const float pd = clampf (p[1], 0.0f, 1.0f) * clampf (p[1], 0.0f, 1.0f) * 0.15f * sr, tilt = mapLin (p[2], -9, 9), frac = mapLin (p[3], 0.2f, 1.0f), wd_ = mapLin (p[4], 0.0f, 2.0f);
+        for (int i = 0; i < n; ++i) { pre[0].write (L[i]); pre[1].write (R[i]); L[i] = pre[0].read (std::max (1.0f, pd)); R[i] = pre[1].read (std::max (1.0f, pd)); }
+        conv.process (ir, frac, L, R, n);
+        for (int c = 0; c < 2; ++c)
+        {
+            eq[c][0].c = BiquadCoeffs::lowShelf (300.0f, -tilt, sr); eq[c][2].c = BiquadCoeffs::highShelf (3000.0f, tilt, sr);
+            float* x = c ? R : L; for (int i = 0; i < n; ++i) x[i] = eq[c][2].tick (eq[c][0].tick (x[i]));
+        }
+        for (int i = 0; i < n; ++i) { const float m = 0.5f * (L[i] + R[i]), s = 0.5f * (L[i] - R[i]) * wd_; L[i] = m + s; R[i] = m - s; }
     }
 
     // ---- Compressor ----------------------------------------------------------------

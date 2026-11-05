@@ -94,7 +94,7 @@ endif()
 # ---- testes e ferramentas do núcleo (C++ puro, sem JUCE) -----------------------------------
 option(SK_BUILD_TOOLS "Compilar testes e packgen" OFF)
 if(SK_BUILD_TOOLS)
-    foreach(t test_core test_packio test_presets test_soundgen)
+    foreach(t test_core test_packio test_presets test_soundgen test_fx_new test_assist)
         add_executable(${t} tests/${t}.cpp)
         target_include_directories(${t} PRIVATE Source)
     endforeach()

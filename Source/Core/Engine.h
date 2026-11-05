@@ -103,6 +103,7 @@ public:
     void noteOn (int note, float vel)
     {
         vel = clampf (vel, 0.0f, 1.0f);
+        for (auto& f : fx) f.noteOn();                    // gatilho do Sidechain (modo Notas)
         const int mode = (int) prm[P_VOICE_MODE];       // 0 poli, 1 mono, 2 legato
         const bool anyHeld = ! stack.empty();
         stack.push_back ({ note, vel });
@@ -162,7 +163,7 @@ public:
 
     void renderCore (float* L, float* R, int n)
     {
-        n = std::min (n, maxN); loopSeen = false;
+        n = std::min (n, maxN); loopSeen = false; chainPpq = renderPpq;
         updateSpectral();
         std::fill (busL.begin(), busL.begin() + n, 0.0f); std::fill (busR.begin(), busR.begin() + n, 0.0f);
         std::fill (vsL.begin(), vsL.begin() + n, 0.0f); std::fill (vsR.begin(), vsR.begin() + n, 0.0f);
@@ -274,7 +275,7 @@ private:
     float modWheel = 0, aftertouch = 0, pitchBend = 0;
     float exPb[128] = {}, exPress[128] = {}, exSlide[128] = {};      // expressão por nota (MPE / aftertouch polifónico)
     std::vector<float> busL, busR, vsL, vsR, aL, aR, bL, bR, xL, xR; float* vsOutL = nullptr; float* vsOutR = nullptr;
-    FxUnit fx[kNumFxSlots]; Limiter lim; Smoother masterGain; float peakL = 0, peakR = 0;
+    double chainPpq = 0; FxUnit fx[kNumFxSlots]; Limiter lim; Smoother masterGain; float peakL = 0, peakR = 0;
     float globalDst[MD_COUNT] = {}; float sendAcc[3] = {}, sendW = 0.0f;
     int rrCounter[2] = { 0, 0 }; Rng rngGlobal;
 
@@ -360,6 +361,7 @@ private:
             const int type = (int) prm[base];
             if (type == 0) continue;
             const float pp[5] = { prm[base + 1], prm[base + 2], prm[base + 3], prm[base + 4], prm[base + 5] };
+            fx[firstSlot + s].setBeat (chainPpq);
             fx[firstSlot + s].process (type, pp, prm[base + 6], L, R, n, bpm);
         }
     }

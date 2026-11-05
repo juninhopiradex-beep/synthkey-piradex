@@ -66,7 +66,7 @@ inline constexpr int kNumDivs = 16;
 #define SK_DIVLIST "4/1|2/1|1/1|1/2|1/2T|1/4.|1/4|1/4T|1/8.|1/8|1/8T|1/16.|1/16|1/16T|1/32|1/32T"
 #define SK_WTNAMES "Básica|Harmónicos|Órgão|Vogais|Coro de Vidro|Sinos Digitais|FM Digital|PWM|Dobra|Pente|Pads Etéreos|Digital Duro|Sub Baixo|Piano Elétrico|Kalimba|Textura|Utilizador (WAV)"
 #define SK_FILTERTYPES "Desligado|Passa-baixo 12|Passa-baixo 24|Passa-alto 12|Passa-alto 24|Passa-banda|Notch|Ladder|Pente|Formante"
-#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo|Delay Tempo|Flanger|Ensemble|Shimmer|Multi-Tap|Pitch"
+#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo|Delay Tempo|Flanger|Ensemble|Shimmer|Multi-Tap|Pitch|Transientes|Sidechain|Convolução"
 #define SK_CHORDS "Desligado|Oitava|Quinta|Maior|Menor|Maj7|Min7|Dom7|Maj9|Min9|Sus2|Sus4|Diatónico 3|Diatónico 7|Diatónico 9"
 #define SK_SCALES "Desligada|Maior|Menor natural|Dórico|Frígio|Lídio|Mixolídio|Menor harmónica|Pentatónica maior|Pentatónica menor|Blues"
 #define SK_KEYS "Dó|Dó#|Ré|Ré#|Mi|Fá|Fá#|Sol|Sol#|Lá|Lá#|Si"
@@ -141,7 +141,7 @@ inline constexpr int kNumDivs = 16;
     X(MENV_Y##n, "menv_y" #n, "Env Multi Y" #n, PK_FLOAT, 0, 1, ((n) == 1 ? 0.0f : ((n) == 2 ? 1.0f : ((n) == 3 ? 0.55f : 0.35f))), "", "")
 
 #define SK_FXSLOT(X, E, id, NM) \
-    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 16, 0, "", SK_FXTYPES) \
+    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 19, 0, "", SK_FXTYPES) \
     X(E##_P1,   id "_p1",   "FX " NM " Param 1", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P2,   id "_p2",   "FX " NM " Param 2", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P3,   id "_p3",   "FX " NM " Param 3", PK_FLOAT, 0, 1, 0.5f, "", "") \

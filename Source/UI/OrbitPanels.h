@@ -416,7 +416,7 @@ public:
     void update() { int sig = 0; for (int s = 0; s < kNumFxSlots; ++s) sig = sig * 13 + (int) proc.getReal (fxSlotBase (s)); if (sig != lastSig) { lastSig = sig; repaint(); } }
     void paint (juce::Graphics& g) override
     {
-        static const char* sh[17] = { "", "EQ", "COM", "SAT", "CHO", "DLY", "REV", "FAS", "BIT", "LAR", "TRE", "DLY", "FLA", "ENS", "SHM", "MTP", "PIT" };
+        static const char* sh[20] = { "", "EQ", "COM", "SAT", "CHO", "DLY", "REV", "FAS", "BIT", "LAR", "TRE", "DLY", "FLA", "ENS", "SHM", "MTP", "PIT", "TRA", "SDC", "CNV" };
         static const char* grp[3] = { "INSERT A", "INSERT B", "AUX" };
         const int bw = 20, gap = 3, gg = 10; int x = 0;
         for (int gi = 0; gi < 3; ++gi)
@@ -424,7 +424,7 @@ public:
             g.setColour (theme::dim()); g.setFont (theme::font (8.5f, true)); g.drawText (grp[gi], x, 0, 3 * (bw + gap), 11, juce::Justification::centredLeft);
             for (int k = 0; k < 3; ++k)
             {
-                const int t = juce::jlimit (0, 16, (int) proc.getReal (fxSlotBase (gi * 3 + k))); const bool on = t != 0; auto r = juce::Rectangle<float> ((float) x, 15.0f, (float) bw, 38.0f);
+                const int t = juce::jlimit (0, 19, (int) proc.getReal (fxSlotBase (gi * 3 + k))); const bool on = t != 0; auto r = juce::Rectangle<float> ((float) x, 15.0f, (float) bw, 38.0f);
                 const auto c = gi == 2 ? theme::accent2() : theme::accent();
                 if (on) { g.setColour (c.withAlpha (0.28f)); g.fillRoundedRectangle (r.expanded (2.0f), 8.0f); }
                 g.setColour (on ? juce::Colour (0xFF14131C).overlaidWith (c.withAlpha (0.20f)) : juce::Colour (0xFF0E0E14)); g.fillRoundedRectangle (r, 6.0f);

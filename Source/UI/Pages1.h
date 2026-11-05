@@ -191,13 +191,14 @@ public:
     int signature() const { return ((int) proc.getReal (base)) * 10 + mode; }
     void refresh()
     {
-        static const char* names[17][5] = {
+        static const char* names[20][5] = {
             { "", "", "", "", "" }, { "GRAVES", "MÉDIOS", "FREQ.", "AGUDOS", "Q" }, { "LIMIAR", "RAZÃO", "ATAQUE", "LIBERT.", "GANHO" }, { "DRIVE", "TOM", "BIAS", "TIPO", "SAÍDA" },
             { "TAXA", "PROF.", "ATRASO", "VOZES", "LARGURA" }, { "TEMPO", "FEEDBACK", "TOM", "PING-PONG", "DESVIO" }, { "TAMANHO", "DECAIM.", "ABAFAR", "PRÉ-DELAY", "LARGURA" },
             { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" }, { "DIVISÃO", "FEEDBACK", "TOM", "PING-PONG", "PONTUADO" },
             { "TAXA", "PROF.", "FEEDBACK", "ATRASO", "ESPALHAR" }, { "TAXA", "PROF.", "ATRASO", "BRILHO", "LARGURA" }, { "TAMANHO", "DECAIM.", "ABAFAR", "SHIMMER", "LARGURA" },
-            { "TEMPO", "ESPALHAR", "FEEDBACK", "TOM", "ESTÉREO" }, { "SEMITONS", "FINO", "GRÃO", "FEEDBACK", "DESAFINAR" } };
-        const int t = juce::jlimit (0, 16, (int) proc.getReal (base));
+            { "TEMPO", "ESPALHAR", "FEEDBACK", "TOM", "ESTÉREO" }, { "SEMITONS", "FINO", "GRÃO", "FEEDBACK", "DESAFINAR" },
+            { "ATAQUE", "SUSTENT.", "VELOC.", "SAÍDA", "SUAVIZ." }, { "DIVISÃO", "PROFUND.", "LIBERT.", "CURVA", "NOTAS ◂ ▸ TEMPO" }, { "IR", "PRÉ-DELAY", "TOM", "TAMANHO", "LARGURA" } };
+        const int t = juce::jlimit (0, 19, (int) proc.getReal (base));
         for (int i = 0; i < 5; ++i)
         {
             const juce::String n = TX (names[t][i]); k[i]->setCaption (n);
