@@ -134,7 +134,7 @@ private:
         T (s, P_A_LOOP + o, "LOOP", 62, 2, [=] { return type() == 2; }, 18); T (s, P_A_REV + o, "REV", 60, 2, [=] { return type() == 2; }, 18);
         T (s, P_A_RR + o, "RR", 56, 3, [=] { return type() == 2; }, 18); T (s, P_A_TRACK + o, "TECLA", 64, 3, [=] { return type() == 2; }, 18);
         KK (P_A_PHASE + o, "FASE", 3, [=] { return type() == 0 || type() == 1; });
-        { const int g = E ? P_B_GR_SIZE : P_A_GR_SIZE, sp = E ? P_B_SP_TILT : P_A_SP_TILT; auto gr = [=] { return type() == 4; }, spc = [=] { return type() == 5; };
+        { const int g = E ? P_B_GR_SIZE : P_A_GR_SIZE, sp = E ? P_B_SP_TILT : P_A_SP_TILT; auto gr = [=] { return type() == 4; }; auto spc = [=] { return type() == 5; };
           KK (g, "TAMANHO", 1, gr); KK (g + 1, "DENSID.", 1, gr); KK (g + 2, "POSI\xC3\x87\xC3\x83O", 1, gr); KK (g + 3, "ALEAT\xC3\x93R.", 1, gr); KK (g + 4, "ALTURA\xC2\xB1", 2, gr); KK (g + 5, "VELOC.", 2, gr); KK (g + 6, "ESPALHAR", 2, gr);
           KK (sp, "INCLIN.", 1, spc); KK (sp + 1, "FORMANTE", 1, spc); KK (sp + 2, "NITIDEZ", 1, spc); KK (sp + 3, "PENTE", 2, spc); KK (sp + 4, "PAR/\xC3\x8DMP.", 2, spc); KK (sp + 5, "VARRER", 2, spc); KK (sp + 6, "DISPERS.", 3, spc); }
     }

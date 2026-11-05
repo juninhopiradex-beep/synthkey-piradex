@@ -351,7 +351,7 @@ int main()
     // ---------------------------------------------------------------- samples e packs
     {
         std::printf ("[8] samples e packs\n");
-        const auto defs = buildPackDefs(); CHECK (defs.size() == 8, "8 packs");
+        const auto defs = buildPackDefs(); CHECK (defs.size() == 12, "12 packs (núcleo + 7 estilos + house, edm, pop, cinematic)");
         Library lib; for (auto& d : defs) if (d.id == "nucleo" || d.id == "amapiano") buildPackLibrary (d, lib);
         std::printf ("   Núcleo + Amapiano: %zu instrumentos, %zu amostras\n", lib.inst.size(), lib.sampleCount());
         const int kit = lib.indexOf ("nucleo.kit"), ld = lib.indexOf ("amapiano.logdrum");
