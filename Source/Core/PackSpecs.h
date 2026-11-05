@@ -169,14 +169,14 @@ inline std::vector<PackDef> buildPackDefs()
     { PackDef p; p.id = "house"; p.name = "House · Deep · Tech"; p.style = "house"; p.accent = "#3DDCFF";
       p.desc = "Bombos de clube, baixos sólidos, stabs de acordes, pianos e órgãos house, plucks tech e arps de pista.";
       p.insts = {
-        D ("kick", "Bombo Club", "Bateria", G_KICK, 145, 46, 0.02f, 0.3f, 3), D ("clap", "Palmas", "Bateria", G_CLAP, 0.14f, 0.9f, 0, 0, 3),
+        D ("kick", "Bombo Club", "Bateria", G_KICK, 145, 46, 0.02f, 0.3f, 3), D ("clap", "Palmas", "Bateria", G_CLAP, 0.14f, 0.9f, 0, 0, 3), D ("snare", "Caixa", "Bateria", G_SNARE, 195, 0.8f, 0.1f, 0.9f, 3),
         D ("hat", "Hi-Hat", "Bateria", G_HAT, 0.03f, 1.0f, 1, 0, 3), D ("ohat", "Hi-Hat Aberto", "Bateria", G_OHAT, 0.24f, 1.0f, 1, 0, 2),
         D ("shaker", "Shaker", "Percussão", G_SHAKER, 0.14f, 1.0f, 0, 0, 2), D ("rim", "Rimshot", "Bateria", G_RIM, 900, 0, 0, 0, 1), D ("tom", "Tom", "Bateria", G_TOM, 110, 0.3f, 0.2f, 0, 2),
         T ("bass", "Baixo House", "Baixo", G_SUB, 1.1f, 0.5f, 0, 0, 28, 52, 3), T ("stab", "Stab de Acordes", "Sintetizador", G_STAB, 0.5f, 3200, 0.7f, 0, 36, 72, 3),
         T ("piano", "Piano House", "Teclas", G_PIANO, 0.5f, 2.4f, 0, 0, 48, 84, 4), T ("organ", "Órgão House", "Teclas", G_EP, 0.4f, 1.6f, 0.2f, 0, 48, 84, 6),
         T ("pluck", "Pluck Tech", "Teclas", G_PLUCK, 0.7f, 0.5f, 1.2f, 0, 40, 76, 4), T ("vox", "Voz Ah", "Vozes", G_VOX, 0, 0.9f, 1.0f, 0, 48, 76, 6),
         D ("riser", "Subida", "Efeitos", G_RISER, 2.8f, 0, 0, 0, 1), D ("impact", "Impacto", "Efeitos", G_IMPACT, 2.0f, 0, 0, 0, 1) };
-      p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 }, { 46, "ohat", 0 } };
+      p.kit = { { 36, "kick", 0 }, { 37, "rim", 0 }, { 38, "snare", 0 }, { 39, "clap", 0 }, { 41, "tom", 0 }, { 42, "hat", 0 }, { 44, "shaker", 0 }, { 46, "ohat", 0 } };
       v.push_back (p); }
 
     // ------------------------------------------------------------------ EDM · Future Bass

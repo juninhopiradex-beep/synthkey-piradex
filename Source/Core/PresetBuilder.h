@@ -367,7 +367,7 @@ inline std::vector<Preset> generatedFor (const std::string& id, const std::vecto
     {
         const auto& g = kGenCurated[i]; if (id != g.pack) continue;
         const auto it = byName.find (g.base); if (it == byName.end()) continue;
-        Preset p = gen::derive (hand[it->second], g.code, g.dup); p.set (P_MASTER_VOL, g.gain); out.push_back (std::move (p));
+        Preset p = gen::derive (hand[it->second], g.code, g.dup); if (p.family.empty()) p.family = familyForCategory (p.category); p.set (P_MASTER_VOL, g.gain); out.push_back (std::move (p));
     }
     return out;
 }

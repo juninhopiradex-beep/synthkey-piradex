@@ -4,6 +4,7 @@
 //  fique em ≈ −8 dBFS, de modo a que todos os presets soem com volume parecido.
 // =============================================================================
 #pragma once
+#include <memory>
 #include "Engine.h"
 #include "Preset.h"
 #include <vector>
@@ -32,7 +33,7 @@ inline float fpDistance (const Fingerprint& a, const Fingerprint& b)
 // renderiza como a calibração e mede: pico (com master a 0 dB), centroides cedo/tarde, ataque, queda, cauda, largura, graves, ruído
 inline float measure (Preset& p, const Library& lib, Fingerprint* fp = nullptr, float targetDb = -8.0f, double sr = 44100.0)
 {
-    static thread_local Engine eng; // grande: não ir para a pilha
+    auto engPtr = std::make_unique<Engine>(); Engine& eng = *engPtr;   // motor novo por medição (grande: heap): o estado residual de um preset anterior alterava o ganho em ±2 dB
     std::vector<float> prm ((size_t) P_COUNT), L (512), R (512);
     p.set (P_MASTER_VOL, 0.0f);
     toParams (p, &lib, prm.data());

@@ -58,7 +58,7 @@ public:
     {
         for (auto& v : voices) { v.active = false; v.f1.reset(); v.f2.reset(); }
         for (auto& f : fx) f.reset();
-        lim.reset(); stack.clear(); ageCounter = 0; sustain = false; lastNote = -1;
+        lim.reset(); stack.clear(); ageCounter = 0; sustain = false; lastNote = -1; rrCounter[0] = rrCounter[1] = 0; rngGlobal.seed (0xA5F1523Du);   // determinismo: mesma predefinição, mesmo som
         for (auto* b : { &busL, &busR, &vsL, &vsR }) std::fill (b->begin(), b->end(), 0.0f);
         masterGain.snap (1.0f); peakL = peakR = 0;
     }
