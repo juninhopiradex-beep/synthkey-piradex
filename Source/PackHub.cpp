@@ -58,6 +58,7 @@ void PackHub::rescan()
         {
             e.installed = true; auto pl = presets::forPack ("nucleo");
             for (auto& p : pl) for (auto& g : presets::kNucleoGains) if (p.name == g.first) p.set (P_MASTER_VOL, g.second);
+            { auto mp = presets::modulePresets(); pl.insert (pl.end(), std::make_move_iterator (mp.begin()), std::make_move_iterator (mp.end())); }   // presets de módulo (sem calibração: só mexem num módulo)
             e.presetCount = (int) pl.size(); pres[d.id] = std::move (pl);
         }
         else if (auto it = found.find (d.id); it != found.end())

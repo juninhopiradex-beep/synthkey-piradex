@@ -66,7 +66,7 @@ inline constexpr int kNumDivs = 16;
 #define SK_DIVLIST "4/1|2/1|1/1|1/2|1/2T|1/4.|1/4|1/4T|1/8.|1/8|1/8T|1/16.|1/16|1/16T|1/32|1/32T"
 #define SK_WTNAMES "Básica|Harmónicos|Órgão|Vogais|Coro de Vidro|Sinos Digitais|FM Digital|PWM|Dobra|Pente|Pads Etéreos|Digital Duro|Sub Baixo|Piano Elétrico|Kalimba|Textura|Utilizador (WAV)"
 #define SK_FILTERTYPES "Desligado|Passa-baixo 12|Passa-baixo 24|Passa-alto 12|Passa-alto 24|Passa-banda|Notch|Ladder|Pente|Formante"
-#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo|Delay Tempo"
+#define SK_FXTYPES "Vazio|EQ|Compressor|Saturador|Chorus|Delay|Reverb|Faser|Bitcrusher|Largura|Trémolo|Delay Tempo|Flanger|Ensemble|Shimmer|Multi-Tap|Pitch"
 #define SK_CHORDS "Desligado|Oitava|Quinta|Maior|Menor|Maj7|Min7|Dom7|Maj9|Min9|Sus2|Sus4|Diatónico 3|Diatónico 7|Diatónico 9"
 #define SK_SCALES "Desligada|Maior|Menor natural|Dórico|Frígio|Lídio|Mixolídio|Menor harmónica|Pentatónica maior|Pentatónica menor|Blues"
 #define SK_KEYS "Dó|Dó#|Ré|Ré#|Mi|Fá|Fá#|Sol|Sol#|Lá|Lá#|Si"
@@ -75,7 +75,7 @@ inline constexpr int kNumDivs = 16;
 // ----------------------------- grupos repetidos -------------------------------
 #define SK_ENGINE(X, E, id, NM, onDef, typeDef) \
     X(E##_ON,     id "_on",     "Motor " NM " Ativo",            PK_BOOL,   0, 1, onDef, "", "") \
-    X(E##_TYPE,   id "_type",   "Motor " NM " Tipo",             PK_CHOICE, 0, 2, typeDef, "", "Analógico|Wavetable|Sample") \
+    X(E##_TYPE,   id "_type",   "Motor " NM " Tipo",             PK_CHOICE, 0, 3, typeDef, "", "Analógico|Wavetable|Sample|Corda") \
     X(E##_LEVEL,  id "_level",  "Motor " NM " Nível",            PK_FLOAT,  -60, 6, 0, "dB", "") \
     X(E##_PAN,    id "_pan",    "Motor " NM " Pan",              PK_FLOAT,  -1, 1, 0, "", "") \
     X(E##_COARSE, id "_coarse", "Motor " NM " Afinação",         PK_INT,    -36, 36, 0, "st", "") \
@@ -141,7 +141,7 @@ inline constexpr int kNumDivs = 16;
     X(MENV_Y##n, "menv_y" #n, "Env Multi Y" #n, PK_FLOAT, 0, 1, ((n) == 1 ? 0.0f : ((n) == 2 ? 1.0f : ((n) == 3 ? 0.55f : 0.35f))), "", "")
 
 #define SK_FXSLOT(X, E, id, NM) \
-    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 11, 0, "", SK_FXTYPES) \
+    X(E##_TYPE, id "_type", "FX " NM " Tipo",    PK_CHOICE, 0, 16, 0, "", SK_FXTYPES) \
     X(E##_P1,   id "_p1",   "FX " NM " Param 1", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P2,   id "_p2",   "FX " NM " Param 2", PK_FLOAT, 0, 1, 0.5f, "", "") \
     X(E##_P3,   id "_p3",   "FX " NM " Param 3", PK_FLOAT, 0, 1, 0.5f, "", "") \
@@ -246,7 +246,24 @@ inline constexpr int kNumDivs = 16;
     SK_MENVP(X, 1) SK_MENVP(X, 2) SK_MENVP(X, 3) SK_MENVP(X, 4) SK_MENVP(X, 5) SK_MENVP(X, 6) SK_MENVP(X, 7) SK_MENVP(X, 8) \
     /* MPE: curvatura por nota (canais 2-16), pressão e slide (CC74) */ \
     X(MPE_ON,    "mpe_on",    "MPE", PK_BOOL, 0, 1, 0, "", "") \
-    X(MPE_RANGE, "mpe_range", "MPE Curvatura por nota", PK_INT, 1, 96, 48, "st", "")
+    X(MPE_RANGE, "mpe_range", "MPE Curvatura por nota", PK_INT, 1, 96, 48, "st", "") \
+    /* arpejador v1.5: ritmo euclidiano (16 passos) e probabilidade reprodutível por semente */ \
+    X(ARP_EUCL_K,   "arp_eucl_k",   "Arp Euclidiano Pulsos", PK_INT, 0, 16, 0, "", "") \
+    X(ARP_EUCL_ROT, "arp_eucl_rot", "Arp Euclidiano Rotação", PK_INT, 0, 15, 0, "", "") \
+    X(ARP_PROB,     "arp_prob",     "Arp Probabilidade", PK_FLOAT, 0, 1, 1, "%", "") \
+    X(ARP_SEED,     "arp_seed",     "Arp Semente", PK_INT, 0, 9999, 0, "", "") \
+    /* motor Corda (Karplus-Strong, modelação física): amortecimento, duração e posição da palheta */ \
+    X(A_KS_DAMP,  "a_ks_damp",  "Corda A Amortecimento", PK_FLOAT, 0, 1, 0.4f, "%", "") \
+    X(A_KS_DECAY, "a_ks_decay", "Corda A Duração",       PK_FLOAT, 0, 1, 0.6f, "%", "") \
+    X(A_KS_PICK,  "a_ks_pick",  "Corda A Palheta",       PK_FLOAT, 0, 1, 0.5f, "%", "") \
+    X(B_KS_DAMP,  "b_ks_damp",  "Corda B Amortecimento", PK_FLOAT, 0, 1, 0.4f, "%", "") \
+    X(B_KS_DECAY, "b_ks_decay", "Corda B Duração",       PK_FLOAT, 0, 1, 0.6f, "%", "") \
+    X(B_KS_PICK,  "b_ks_pick",  "Corda B Palheta",       PK_FLOAT, 0, 1, 0.5f, "%", "") \
+    /* split / layer: cada motor só soa dentro da sua zona de teclas (notas MIDI) */ \
+    X(A_KEYLO, "a_keylo", "Motor A Tecla Mín", PK_INT, 0, 127, 0, "", "") \
+    X(A_KEYHI, "a_keyhi", "Motor A Tecla Máx", PK_INT, 0, 127, 127, "", "") \
+    X(B_KEYLO, "b_keylo", "Motor B Tecla Mín", PK_INT, 0, 127, 0, "", "") \
+    X(B_KEYHI, "b_keyhi", "Motor B Tecla Máx", PK_INT, 0, 127, 127, "", "")
 
 // --------------------------------- enum + tabela --------------------------------
 #define SK_ENUM_ROW(E, id, name, kind, mn, mx, def, unit, choices) P_##E,

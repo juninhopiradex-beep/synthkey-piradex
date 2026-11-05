@@ -167,6 +167,7 @@ public:
         else if (type == 1) { l1 = TX ("POSI\xC3\x87\xC3\x83O"); v1 = juce::String ((int) std::lround (arcVal * 100.0f)) + "%"; l2 = "FRAME"; v2 = juce::String (1 + (int) std::lround (arcVal * (Wavetables::kFrames - 1))) + " / " + juce::String (Wavetables::kFrames); }
         else if (type == 2) { l1 = "SAMPLE"; v1 = proc.sampleDisplayName (E); l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB";
                        if (loopOn) { l2 = "LOOP"; v2 = juce::String (lp.srcBpm, 0) + juce::String (juce::CharPointer_UTF8 (" \xE2\x86\x92 ")) + juce::String (lp.hostBpm, 0) + " bpm"; } }
+        else if (type == 3) { l1 = "CORDA"; v1 = juce::String ((int) std::lround ((E ? proc.getReal (P_B_KS_DAMP) : proc.getReal (P_A_KS_DAMP)) * 100.0f)) + "% amort."; l2 = TX ("N\xC3\x8DVEL"); v2 = juce::String (proc.getReal (P_A_LEVEL + o), 1) + " dB"; }
         else { l1 = "ONDA"; v1 = juce::StringArray::fromTokens (TX (kParams[P_A_WAVE].choices), "|", "")[(int) proc.getReal (P_A_WAVE + o)]; l2 = "UNISSON"; v2 = juce::String ((int) proc.getReal (P_A_UNI + o)); }
         auto lbl = [&] (juce::Rectangle<int> r, const juce::String& a, const juce::String& bb, juce::Justification j)
         { g.setColour (theme::dim()); g.setFont (theme::font (9.0f, true)); g.drawText (a, r.withHeight (11), j); g.setColour (juce::Colours::white); g.setFont (theme::font (12.0f, true)); g.drawFittedText (bb, r.withTrimmedTop (11).withHeight (15), j, 1, 0.75f); };
@@ -412,7 +413,7 @@ public:
     void update() { int sig = 0; for (int s = 0; s < kNumFxSlots; ++s) sig = sig * 13 + (int) proc.getReal (fxSlotBase (s)); if (sig != lastSig) { lastSig = sig; repaint(); } }
     void paint (juce::Graphics& g) override
     {
-        static const char* sh[12] = { "", "EQ", "COM", "SAT", "CHO", "DLY", "REV", "FAS", "BIT", "LAR", "TRE", "DLY" };
+        static const char* sh[17] = { "", "EQ", "COM", "SAT", "CHO", "DLY", "REV", "FAS", "BIT", "LAR", "TRE", "DLY", "FLA", "ENS", "SHM", "MTP", "PIT" };
         static const char* grp[3] = { "INSERT A", "INSERT B", "AUX" };
         const int bw = 20, gap = 3, gg = 10; int x = 0;
         for (int gi = 0; gi < 3; ++gi)
@@ -420,7 +421,7 @@ public:
             g.setColour (theme::dim()); g.setFont (theme::font (8.5f, true)); g.drawText (grp[gi], x, 0, 3 * (bw + gap), 11, juce::Justification::centredLeft);
             for (int k = 0; k < 3; ++k)
             {
-                const int t = juce::jlimit (0, 11, (int) proc.getReal (fxSlotBase (gi * 3 + k))); const bool on = t != 0; auto r = juce::Rectangle<float> ((float) x, 15.0f, (float) bw, 38.0f);
+                const int t = juce::jlimit (0, 16, (int) proc.getReal (fxSlotBase (gi * 3 + k))); const bool on = t != 0; auto r = juce::Rectangle<float> ((float) x, 15.0f, (float) bw, 38.0f);
                 const auto c = gi == 2 ? theme::accent2() : theme::accent();
                 if (on) { g.setColour (c.withAlpha (0.28f)); g.fillRoundedRectangle (r.expanded (2.0f), 8.0f); }
                 g.setColour (on ? juce::Colour (0xFF14131C).overlaidWith (c.withAlpha (0.20f)) : juce::Colour (0xFF0E0E14)); g.fillRoundedRectangle (r, 6.0f);

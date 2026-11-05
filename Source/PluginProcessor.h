@@ -75,6 +75,12 @@ public:
     sk::Preset capturePreset (const juce::String& name) const;
     bool presetIsLocked (const sk::Preset& p) const;      // usa instrumentos de um pack bloqueado?
     void randomizePatch (float amount);
+    // morph entre o som actual e um preset-alvo (t 0..1); os samples trocam a meio
+    bool beginMorph (int targetIndex);
+    void setMorph (float t);
+    void endMorph() { morphActive = false; }
+    bool morphIsActive() const { return morphActive; }
+    juce::String morphTargetName() const { return morphActive ? morphName : juce::String(); }
 
     // ---- medidores / estado para a interface ----
     std::atomic<float> meterL { 0 }, meterR { 0 };
@@ -157,6 +163,8 @@ private:
     std::atomic<int> previewLeftSamples { 0 };
     float previewGain = 1.0f;
 
+    std::array<float, sk::P_COUNT> morphA {}, morphB {};
+    bool morphActive = false; juce::String morphName, morphSmpA, morphSmpB; float morphT = 0.0f;
     std::vector<sk::Preset> presets; int currentPreset = -1; juce::String presetName { "Init" };
     bool loadingPreset = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SynthKeyProcessor)

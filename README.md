@@ -1,7 +1,7 @@
 # SYNTHKEY by Piradex
 
 Sintetizador VSTi / Audio Unit híbrido (analógico + wavetable + samples) com **packs de estilo** (Trap, R&B,
-Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neon, 110 presets de fábrica.
+Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neon, 573 presets de fábrica (+ 46 presets de módulo); os 291 do Núcleo adicionados em 2026-11 só foram validados tecnicamente, ainda não ouvidos.
 
 * **Formatos:** VST3 + AU + Standalone (macOS) · VST3 + Standalone (Windows 10/11 x64)
 * **macOS:** binário universal (Apple Silicon + Intel), **mínimo 10.13** · **Windows:** runtime estático (sem VC++ Redistributable)
@@ -60,7 +60,7 @@ a ativação online está prevista para a v1.1.
 
 ## Novidades da v1.1.0
 
-* **240 presets** de fábrica (Núcleo 83 + 21–23 por estilo).
+* **573 presets** de fábrica (Núcleo 380 + 25–30 por estilo) e **46 presets de módulo**. Os 291 presets novos do Núcleo (anexo v1.5) (Cordas, Metais, Sinos, Mallets, Guitarras, Órgãos, Sopros, Acordes, Sequências, Texturas, Cinemático, Híbrido, Experimental) têm `qa: "auto"` — passaram nos testes automáticos mas ainda não foram validados ao ouvido.
 * Separador **VISUAL**: osciloscópio, espectro, curva dos filtros e wavetable em 3D.
 * **Anéis de modulação** nos botões: mostram o que a matriz faz a cada parâmetro.
 * **Navegador de presets** (clique no nome do preset): pesquisa por nome/estilo/etiqueta, filtros por pack e categoria, favoritos (★).
@@ -115,3 +115,14 @@ a ativação online está prevista para a v1.1.
 * **Anular / Refazer** (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) e presets guardados com **etiquetas** (`Nome #etiqueta, outra`).
 * **✦ DESCREVER:** escreve o som em palavras ("baixo escuro e agressivo", "pad quente e largo", "808 drill") e o SYNTHKEY monta um preset (regras internas, sem internet), com volume calibrado. Ecrã de **ajuda** na primeira abertura.
 * Correção: a origem de modulação aceita agora todas as fontes (as 5 novas não se podiam escolher).
+
+## v1.5.0 (em desenvolvimento) — trabalho posterior à auditoria
+
+* **Motor:** corrigidos início do sample (`MD_START`), anti-aliasing de sync/dobra/FM, regressão do oversampling (FIR de 90 dB) e limitador O(1); envios A/B passam a ser **por voz** (antes dos inserts); corrigida uma leitura fora do buffer no `DelayLine` (afetava todos os efeitos).
+* **Novo motor Corda** (modelação física, Karplus-Strong): tipo de motor "Corda" com Amortecimento, Duração e Palheta (`a_ks_*` / `b_ks_*`).
+* **Split / Layer:** cada motor tem zona de teclas (`a_keylo/a_keyhi`, `b_keylo/b_keyhi`).
+* **5 efeitos novos:** Flanger, Ensemble, Shimmer, Multi-Tap, Pitch (parâmetros 1–5 normalizados 0–1; ver `Fx.h`).
+* **Arpejador:** ritmo euclidiano (`arp_eucl_k/rot`) e probabilidade com semente reprodutível (`arp_prob`, `arp_seed`).
+* **Presets:** 13 famílias novas (Cordas, Metais, Sinos, Mallets, Guitarras, Órgãos, Sopros, Acordes, Sequências, Texturas, Cinemático, Híbrido, Experimental), modelação física, split/layer, e 46 presets de módulo (osc/filtro/env/mod/fx/arp) que só alteram o seu módulo. Formato `.skpreset` 2 com família, subfamília, motor, género, papel, módulo, QA e versão; ficheiros do formato 1 continuam a abrir.
+* **Estado de validação:** os presets novos têm `qa: auto` (passaram nos testes automáticos de nível, DC, cauda, mono, duplicados e NaN); **nenhum foi ouvido por uma pessoa**. O morph entre presets existe no núcleo (`morphParams`) mas ainda não tem controlo na interface.
+* Os ganhos de calibração do Núcleo (`NucleoGains.h`) são gerados por `packgen gains` e um teste falha se faltar algum preset.

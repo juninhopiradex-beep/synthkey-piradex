@@ -42,9 +42,13 @@ public:
         search.setFont (theme::font (14.0f)); search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xFF0A0C18)); search.setColour (juce::TextEditor::textColourId, theme::text());
         search.setColour (juce::TextEditor::outlineColourId, theme::stroke()); search.setColour (juce::TextEditor::focusedOutlineColourId, theme::accent());
         search.addListener (this);
-        addAndMakeVisible (packBox); addAndMakeVisible (catBox); addAndMakeVisible (list); addAndMakeVisible (closeBtn);
+        addAndMakeVisible (packBox); addAndMakeVisible (catBox); addAndMakeVisible (engBox); addAndMakeVisible (qaBox); addAndMakeVisible (list); addAndMakeVisible (closeBtn);
         closeBtn.setButtonText (TX ("\xE2\x9C\x95")); closeBtn.onClick = [this] { close(); };
         packBox.onChange = [this] { rebuild(); }; catBox.onChange = [this] { rebuild(); };
+        engBox.addItem (TX ("Todos os motores"), 1); engBox.addItem (TX ("Anal\xC3\xB3gico"), 2); engBox.addItem ("Wavetable", 3); engBox.addItem ("Sample", 4); engBox.addItem (TX ("H\xC3\xADbrido"), 5); engBox.addItem (TX ("F\xC3\xADsico (Corda)"), 6); engBox.addItem (TX ("M\xC3\xB3" "dulos"), 7);
+        engBox.setSelectedId (1, juce::dontSendNotification); engBox.onChange = [this] { rebuild(); };
+        qaBox.addItem (TX ("Qualquer valida\xC3\xA7\xC3\xA3o"), 1); qaBox.addItem (TX ("Ouvidos / lan\xC3\xA7" "ados"), 2); qaBox.addItem (TX ("S\xC3\xB3 valida\xC3\xA7\xC3\xA3o t\xC3\xA9" "cnica"), 3);
+        qaBox.setSelectedId (1, juce::dontSendNotification); qaBox.onChange = [this] { rebuild(); };
         list.setModel (this); list.setRowHeight (40); list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF0A0C18)); list.setOutlineThickness (0);
         setVisible (false);
     }
@@ -72,7 +76,8 @@ public:
         closeBtn.setBounds (panel.getRight() - 46, panel.getY() + 8, 32, 26);
         search.setBounds (panel.getX() + 14, panel.getY() + 42, 472, 32);
         packBox.setBounds (panel.getX() + 14, panel.getY() + 82, 232, 28); catBox.setBounds (panel.getX() + 254, panel.getY() + 82, 232, 28);
-        list.setBounds (panel.getX() + 14, panel.getY() + 120, 472, panel.getHeight() - 120 - 34);
+        engBox.setBounds (panel.getX() + 14, panel.getY() + 116, 232, 28); qaBox.setBounds (panel.getX() + 254, panel.getY() + 116, 232, 28);
+        list.setBounds (panel.getX() + 14, panel.getY() + 154, 472, panel.getHeight() - 154 - 34);
     }
     void mouseDown (const juce::MouseEvent& e) override { if (! panel.contains (e.getPosition())) close(); }
     bool keyPressed (const juce::KeyPress& k) override
@@ -98,7 +103,7 @@ private:
     }
     void rebuild()
     {
-        rows.clear(); const auto& L = proc.presetList(); const int pk = packBox.getSelectedId(); const juce::String cat = catBox.getSelectedId() > 1 ? catBox.getText() : juce::String();
+        rows.clear(); const auto& L = proc.presetList(); const int pk = packBox.getSelectedId(); const int engSel = engBox.getSelectedId(), qaSel = qaBox.getSelectedId(); const juce::String cat = catBox.getSelectedId() > 1 ? catBox.getText() : juce::String();
         juce::StringArray tokens; tokens.addTokens (search.getText().toLowerCase(), " ", ""); tokens.removeEmptyStrings();
         for (size_t i = 0; i < L.size(); ++i)
         {
@@ -106,9 +111,12 @@ private:
             if (pk == 2 && ! Favourites::get().has (p.pack, p.name)) continue;
             if (pk >= 3 && (size_t) (pk - 3) < packIds.size() && p.pack != packIds[(size_t) (pk - 3)]) continue;
             if (cat.isNotEmpty() && TX (p.category.c_str()) != cat) continue;
+            if (engSel > 1 && engineKey (p) != engSel) continue;
+            if (qaSel == 2 && p.qa == "auto") continue;
+            if (qaSel == 3 && p.qa != "auto") continue;
             if (! tokens.isEmpty())
             {
-                juce::String hay = TX (p.name.c_str()) + " " + TX (p.category.c_str()) + " " + TX (p.style.c_str()) + " " + TX (p.pack.c_str());
+                juce::String hay = TX (p.name.c_str()) + " " + TX (p.category.c_str()) + " " + TX (p.style.c_str()) + " " + TX (p.pack.c_str()) + " " + p.family + " " + p.subfamily + " " + p.role + " " + p.genre;
                 for (auto& t : p.tags) hay << " " << TX (t.c_str());
                 hay = hay.toLowerCase(); bool ok = true; for (auto& t : tokens) if (! hay.contains (t)) { ok = false; break; }
                 if (! ok) continue;
@@ -116,6 +124,15 @@ private:
             rows.push_back ((int) i);
         }
         list.updateContent(); list.repaint(); repaint();
+    }
+    // motor do preset (2 analógico, 3 wavetable, 4 sample, 5 híbrido, 6 físico, 7 módulo) — deriva dos parâmetros nos presets antigos
+    static int engineKey (const Preset& p)
+    {
+        if (! p.module.empty()) return 7;
+        const int ta = (int) p.get (P_A_TYPE), tb = (int) p.get (P_B_TYPE); const bool bOn = p.get (P_B_ON) > 0.5f;
+        if (ta == 3 || (bOn && tb == 3)) return 6;
+        if (bOn && tb != ta) return 5;
+        return ta == 1 ? 3 : (ta == 2 ? 4 : 2);
     }
     void textEditorTextChanged (juce::TextEditor&) override { rebuild(); }
     void textEditorEscapeKeyPressed (juce::TextEditor&) override { close(); }
@@ -152,7 +169,7 @@ private:
     void selectedRowsChanged (int row) override { if (! suppress && row >= 0 && row < (int) rows.size()) proc.loadPresetIndex (rows[(size_t) row]); }
 
     SynthKeyProcessor& proc; std::function<void (const juce::String&, bool)> toast;
-    juce::TextEditor search; juce::ComboBox packBox, catBox; juce::ListBox list; juce::TextButton closeBtn;
+    juce::TextEditor search; juce::ComboBox packBox, catBox, engBox, qaBox; juce::ListBox list; juce::TextButton closeBtn;
     juce::Rectangle<int> panel { 12, 104, 500, 552 }; std::vector<int> rows; std::vector<std::string> packIds; bool suppress = false;
 };
 

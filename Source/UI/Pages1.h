@@ -191,11 +191,13 @@ public:
     int signature() const { return ((int) proc.getReal (base)) * 10 + mode; }
     void refresh()
     {
-        static const char* names[12][5] = {
+        static const char* names[17][5] = {
             { "", "", "", "", "" }, { "GRAVES", "MÉDIOS", "FREQ.", "AGUDOS", "Q" }, { "LIMIAR", "RAZÃO", "ATAQUE", "LIBERT.", "GANHO" }, { "DRIVE", "TOM", "BIAS", "TIPO", "SAÍDA" },
             { "TAXA", "PROF.", "ATRASO", "VOZES", "LARGURA" }, { "TEMPO", "FEEDBACK", "TOM", "PING-PONG", "DESVIO" }, { "TAMANHO", "DECAIM.", "ABAFAR", "PRÉ-DELAY", "LARGURA" },
-            { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" }, { "DIVISÃO", "FEEDBACK", "TOM", "PING-PONG", "PONTUADO" } };
-        const int t = juce::jlimit (0, 11, (int) proc.getReal (base));
+            { "TAXA", "PROF.", "FEEDBACK", "FREQ.", "ESPALHAR" }, { "BITS", "TAXA", "", "TOM", "SAÍDA" }, { "LARGURA", "CRUZAM.", "BALANÇO", "MÉDIOS", "LATERAIS" }, { "TAXA", "PROF.", "FORMA", "ESPALHAR", "" }, { "DIVISÃO", "FEEDBACK", "TOM", "PING-PONG", "PONTUADO" },
+            { "TAXA", "PROF.", "FEEDBACK", "ATRASO", "ESPALHAR" }, { "TAXA", "PROF.", "ATRASO", "BRILHO", "LARGURA" }, { "TAMANHO", "DECAIM.", "ABAFAR", "SHIMMER", "LARGURA" },
+            { "TEMPO", "ESPALHAR", "FEEDBACK", "TOM", "ESTÉREO" }, { "SEMITONS", "FINO", "GRÃO", "FEEDBACK", "DESAFINAR" } };
+        const int t = juce::jlimit (0, 16, (int) proc.getReal (base));
         for (int i = 0; i < 5; ++i)
         {
             const juce::String n = TX (names[t][i]); k[i]->setCaption (n);
@@ -345,6 +347,7 @@ public:
         auto* b = addSection ("ARPEJADOR", { 388, 0, 768, 222 });
         T (b, P_ARP_ON, "LIGADO", 90); C (b, P_ARP_MODE, 150); C (b, P_ARP_RATE, 80); C (b, P_ARP_PATTERN, 190); T (b, P_ARP_LATCH, "LATCH", 80, 2);
         b->newRow(); K (b, P_ARP_GATE, "GATE"); K (b, P_ARP_OCT, "OITAVAS"); K (b, P_ARP_SWING, "SWING"); K (b, P_ARP_LEN, "PASSOS");
+        K (b, P_ARP_EUCL_K, "EUCLID.", 2); K (b, P_ARP_EUCL_ROT, TX ("ROTA\xC3\x87\xC3\x83O"), 2, [this] { return val (P_ARP_EUCL_K) > 0; }); K (b, P_ARP_PROB, "PROB.", 2); K (b, P_ARP_SEED, "SEMENTE", 3, [this] { return val (P_ARP_PROB) < 0.999f; });
         T (b, P_ARP_EDIT, TX ("PADR\xC3\x83O PR\xC3\x93PRIO"), 170, 1, {}, 20);
         pattern = new PatternView (proc); addAndMakeVisible (pattern); pattern->setBounds (0, 230, 1156, 222);
         setMode (2);

@@ -8,6 +8,8 @@
 // =============================================================================
 #pragma once
 #include "Preset.h"
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <string>
@@ -106,7 +108,7 @@ inline std::vector<Preset> nucleo()
       ANA (a, 3, 2, 8) " a_pwm=0.42" MONO (70) " glide_mode=1" FIL1E (2, 1800, 0.28, 0.45) ENV2 (1, 260, 0.25, 180) AMP (2, 300, 0.8, 160)
       MOD (1, 1, 19, 0.2) " lfo1_rate=0.8" DELAY ("fxa2", 0.54, 0.3, 0.5, 0.3, 0.5, 0.2) },
     { "Sync Scream", "Lead", "lead,sync,agressivo", "nucleo", "", "",
-      ANA (a, 2, 2, 10) " a_sync=14" MOD (1, 3, 1, 0.5) ENV2 (1, 650, 0.1, 200) FIL1 (2, 5200, 0.2) AMP (2, 380, 0.65, 180)
+      ANA (a, 2, 2, 10) " a_sync=14" MOD (1, 3, 1, 0.5) ENV2 (1, 650, 0.1, 200) FIL1 (2, 5200, 0.2) AMP (2, 380, 0.65, 180) FIL2 (3, 25, 0.05)
       SATUR ("fxa1", 0.3, 0.7, 0.1, 0.4, 0.8, 0.5) DELAY ("fxa2", 0.6, 0.3, 0.5, 0.5, 0.5, 0.2) },
     { "Triângulo Suave", "Lead", "lead,suave,flauta", "nucleo", "", "",
       ANA (a, 1, 2, 9) " a_fold=0.1" FIL1 (1, 4500, 0.05) AMP (35, 400, 0.8, 340) MOD (1, 1, 3, 0.04) " lfo1_rate=5 lfo1_fade=800"
@@ -326,6 +328,8 @@ inline std::vector<Preset> kuduro()
 
 #include "PresetsMore.inc"
 #include "PresetsKits.inc"
+#include "PresetsFamilies.inc"
+#include "PresetsModules.inc"
 
 inline std::vector<Preset> forPackBase (const std::string& id)
 {
@@ -345,6 +349,7 @@ inline std::vector<Preset> forPack (const std::string& id)
     auto v = forPackBase (id);
     for (auto* more : { &kitVariants, &extrasMore })
     { auto x = (*more) (id); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
+    if (id == "nucleo") { auto x = familiesNucleo(); v.insert (v.end(), std::make_move_iterator (x.begin()), std::make_move_iterator (x.end())); }
     return v;
 }
 }} // namespace sk::presets

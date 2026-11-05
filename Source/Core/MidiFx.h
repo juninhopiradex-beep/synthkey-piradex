@@ -220,6 +220,12 @@ private:
         for (int o = 0; o < octs; ++o) for (auto h : list) { h.note += 12 * o; if (h.note <= 127) all.push_back (h); }
         list = all;
     }
+    static float arpHash01 (uint32_t seed, uint64_t pos)
+    {
+        uint32_t x = seed * 2654435761u ^ (uint32_t) (pos + 1) * 2246822519u ^ (uint32_t) (pos >> 32) * 3266489917u;
+        x ^= x >> 15; x *= 2246822519u; x ^= x >> 13; x *= 3266489917u; x ^= x >> 16;
+        return (float) (x >> 8) / 16777216.0f;
+    }
     int pickIndex (int mode, int size)
     {
         if (size <= 0) return 0;
@@ -277,7 +283,13 @@ private:
             }
             else stp = &ap.s[stepCounter % ap.len];
             const ArpStep& st = *stp;
+            // v1.5: ritmo euclidiano e probabilidade (função pura de semente + posição: reprodutível, independente do resto)
+            bool skip = false;
+            const int ek = (int) prm[P_ARP_EUCL_K];
+            if (ek > 0) { const int ei = (int) ((stepCounter + (int64_t) prm[P_ARP_EUCL_ROT]) & 15); skip = ((ei * ek) % 16) >= ek; }
+            if (! skip && prm[P_ARP_PROB] < 0.999f) skip = arpHash01 ((uint32_t) prm[P_ARP_SEED], (uint64_t) stepCounter) > prm[P_ARP_PROB];
             ++stepCounter;
+            if (skip) continue;
             if (st.flags & AF_REST) continue;
             if (st.flags & AF_TIE)
             {

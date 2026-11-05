@@ -514,14 +514,39 @@ void SynthKeyProcessor::refreshPresetList()
 void SynthKeyProcessor::loadPreset (const Preset& p, int idx)
 {
     loadingPreset = true;
-    for (int i = 0; i < P_COUNT; ++i) { if (i == P_A_SMP || i == P_B_SMP) continue; setReal (i, p.get (i)); }
-    presetName = U (p.name.c_str()); currentPreset = idx;
-    apvts.state.setProperty ("presetName", presetName, nullptr);
-    setSampleId (0, U (p.sampleA.c_str())); setSampleId (1, U (p.sampleB.c_str()));
+    const bool isModule = ! p.module.empty();      // preset de módulo: só escreve os parâmetros do módulo (osc/filtro/env/mod/fx/arp)
+    for (int i = 0; i < P_COUNT; ++i) { if (i == P_A_SMP || i == P_B_SMP) continue; if (isModule && ! moduleOwnsIndex (p.module, i)) continue; setReal (i, p.get (i)); }
+    if (! isModule)
+    {
+        presetName = U (p.name.c_str()); currentPreset = idx;
+        apvts.state.setProperty ("presetName", presetName, nullptr);
+        setSampleId (0, U (p.sampleA.c_str())); setSampleId (1, U (p.sampleB.c_str()));
+    }
     loadingPreset = false;
     updatePreviewState();
     if (getReal (P_A_TYPE) == 2.0f || getReal (P_B_TYPE) == 2.0f) previewLeftSamples.store ((int) (15.0 * sr));
     if (onPresetLoaded) onPresetLoaded();
+}
+
+bool SynthKeyProcessor::beginMorph (int idx)
+{
+    if (idx < 0 || idx >= (int) presets.size() || ! presets[(size_t) idx].module.empty()) { morphActive = false; return false; }
+    const auto& p = presets[(size_t) idx];
+    for (int i = 0; i < P_COUNT; ++i) { morphA[(size_t) i] = getReal (i); morphB[(size_t) i] = p.get (i); }
+    morphName = U (p.name.c_str()); morphSmpA = U (p.sampleA.c_str()); morphSmpB = U (p.sampleB.c_str());
+    morphT = 0.0f; morphActive = true; return true;
+}
+
+void SynthKeyProcessor::setMorph (float t)
+{
+    if (! morphActive) return;
+    std::array<float, P_COUNT> out {};
+    morphParams (morphA.data(), morphB.data(), t, out.data());
+    const bool past = t >= 0.5f, wasPast = morphT >= 0.5f; morphT = t;
+    loadingPreset = true;
+    for (int i = 0; i < P_COUNT; ++i) { if (i == P_A_SMP || i == P_B_SMP) continue; setReal (i, out[(size_t) i]); }
+    loadingPreset = false;
+    if (past != wasPast && past) { setSampleId (0, morphSmpA); setSampleId (1, morphSmpB); }
 }
 
 void SynthKeyProcessor::loadPresetIndex (int i) { if (i >= 0 && i < (int) presets.size()) loadPreset (presets[(size_t) i], i); }

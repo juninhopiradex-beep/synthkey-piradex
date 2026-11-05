@@ -21,15 +21,32 @@ struct DelayLine
     inline float read (float d) const   // d em amostras (>=1), interpolação linear
     {
         float rp = (float) w - d; while (rp < 0) rp += (float) size;
-        const int i0 = (int) rp; const int i1 = i0 + 1 >= size ? 0 : i0 + 1; const float f = rp - (float) i0;
+        if (rp >= (float) size) rp = 0.0f;                        // rp<0 minúsculo + size arredonda para size: fora do buffer
+        const int i0 = std::min ((int) rp, size - 1); const int i1 = i0 + 1 >= size ? 0 : i0 + 1; const float f = rp - (float) i0;
         return buf[(size_t) i0] + (buf[(size_t) i1] - buf[(size_t) i0]) * f;
+    }
+};
+
+// transposição por duas cabeças de leitura com janela Hann (sem formantes; ~25–60 ms de grão)
+struct PitchShifter
+{
+    DelayLine dl; float ph = 0.0f;
+    void allocate (int n) { dl.allocate (n); ph = 0.0f; }
+    void clear() { dl.clear(); ph = 0.0f; }
+    inline float tick (float x, float ratio, float grain)      // grain em amostras
+    {
+        dl.write (x);
+        ph += (1.0f - ratio) / grain; ph -= std::floor (ph);
+        const float p2 = ph + 0.5f - std::floor (ph + 0.5f);
+        const float w1 = std::sin (3.14159265f * ph), w2 = std::sin (3.14159265f * p2);
+        return dl.read (std::max (2.0f, ph * grain + 2.0f)) * w1 * w1 + dl.read (std::max (2.0f, p2 * grain + 2.0f)) * w2 * w2;
     }
 };
 
 class FxUnit
 {
 public:
-    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem, DelaySync };
+    enum Type { Empty = 0, EQ, Comp, Sat, Chorus, Delay, Reverb, Phaser, Crush, Width, Trem, DelaySync, Flanger, Ensemble, Shimmer, MultiTap, Pitch };
 
     void prepare (float sampleRate, int maxBlock)
     {
@@ -39,6 +56,8 @@ public:
         er[0].allocate ((int) (sr * 0.12f)); er[1].allocate ((int) (sr * 0.12f));
         ch[0].allocate ((int) (sr * 0.08f)); ch[1].allocate ((int) (sr * 0.08f));
         pre[0].allocate ((int) (sr * 0.25f)); pre[1].allocate ((int) (sr * 0.25f));
+        fl[0].allocate ((int) (sr * 0.03f)); fl[1].allocate ((int) (sr * 0.03f));
+        for (int i = 0; i < 2; ++i) { psA[i].allocate ((int) (sr * 0.2f)); psB[i].allocate ((int) (sr * 0.2f)); }
         const float scale = sr / 44100.0f;
         static const int base[8] = { 1103, 1327, 1531, 1783, 2017, 2243, 2477, 2707 };
         for (int i = 0; i < 8; ++i) { baseLen[i] = (int) ((float) base[i] * scale); rv[i].allocate ((int) ((float) baseLen[i] * 1.7f) + 64); }
@@ -54,6 +73,8 @@ public:
         envC = 0; for (auto& v : lp1) v = 0; for (auto& v : fbLp) v = 0;
         for (auto& a : ap) for (auto& v : a) v = 0; fbPh[0] = fbPh[1] = 0;
         phase = 0; crushHold[0] = crushHold[1] = 0; crushCnt = 0; for (auto& b : wd) b.reset();
+        for (auto& d : fl) d.clear(); for (auto& d : psA) d.clear(); for (auto& d : psB) d.clear();
+        flFb[0] = flFb[1] = 0; ensPh = 0; ensLp[0] = ensLp[1] = 0; mtLp[0] = mtLp[1] = 0; shFb[0] = shFb[1] = 0; shN = 0; for (auto& v : shBufL) v = 0; for (auto& v : shBufR) v = 0;
         satLp[0] = satLp[1] = 0; lastType = -1; fbHp[0] = fbHp[1] = 0; dSm[0] = dSm[1] = -1.0f; wowPh = 0; inHp = 0;
     }
 
@@ -77,6 +98,11 @@ public:
             case Crush: doCrush (p, L, R, n); break;
             case Width: doWidth (p, L, R, n); break;
             case Trem: doTrem (p, L, R, n); break;
+            case Flanger: doFlanger (p, L, R, n); break;
+            case Ensemble: doEnsemble (p, L, R, n); break;
+            case Shimmer: doShimmer (p, L, R, n); break;
+            case MultiTap: doMultiTap (p, L, R, n); break;
+            case Pitch: doPitch (p, L, R, n); break;
             default: break;
         }
         if (needDry)
@@ -327,6 +353,117 @@ private:
             phase += inc; if (phase >= 1) phase -= 1;
         }
     }
+
+    // ============================ v1.5: efeitos novos ============================
+    DelayLine fl[2]; PitchShifter psA[2], psB[2]; float flFb[2] = {}, ensPh = 0, ensLp[2] = {}, mtLp[2] = {}, shFb[2] = {};
+    int shN = 0; float shBufL[32] = {}, shBufR[32] = {};
+
+    // ---- Flanger: atraso curto modulado + realimentação (p: taxa, profundidade, feedback ±, atraso base, largura) ----
+    void doFlanger (const float* p, float* L, float* R, int n)
+    {
+        const float rate = mapLog (p[0], 0.05f, 5.0f), depth = p[1], fb = mapLin (p[2], -0.9f, 0.9f), man = mapLog (p[3], 0.3f, 6.0f) * 0.001f * sr, sp = p[4] * 0.5f;
+        const float inc = rate / sr;
+        for (int i = 0; i < n; ++i)
+        {
+            for (int c = 0; c < 2; ++c)
+            {
+                float* x = c ? R : L; const float in = x[i];
+                const float ph = phase + (c ? sp : 0.0f), lfo = std::sin (kTwoPi * (ph - std::floor (ph)));
+                const float d = clampf (man * (1.0f + 0.9f * depth * lfo), 2.0f, sr * 0.028f);
+                const float y = fl[c].read (d);
+                fl[c].write (fastTanh (in + fb * flFb[c]));
+                flFb[c] = flushDenorm (y);
+                x[i] = 0.5f * (in + y);
+            }
+            phase += inc; if (phase >= 1.0f) phase -= 1.0f;
+        }
+    }
+
+    // ---- Ensemble: 6 vozes com duas LFOs lentas (p: taxa, profundidade, atraso, brilho, largura) ----
+    void doEnsemble (const float* p, float* L, float* R, int n)
+    {
+        const float rate = mapLog (p[0], 0.1f, 3.0f), depth = mapLin (p[1], 0.5f, 6.0f) * 0.001f * sr, center = mapLin (p[2], 8, 28) * 0.001f * sr, wide = p[4];
+        const float a = 1.0f - std::exp (-kTwoPi * mapLog (p[3], 1500, 16000) / sr), inc = rate / sr;
+        for (int i = 0; i < n; ++i)
+        {
+            ch[0].write (L[i]); ch[1].write (R[i]);
+            float oL = 0, oR = 0;
+            for (int v = 0; v < 6; ++v)
+            {
+                const float ph1 = ensPh + (float) v / 6.0f, ph2 = ensPh * 0.37f + (float) v * 0.21f;
+                const float m = 0.7f * std::sin (kTwoPi * (ph1 - std::floor (ph1))) + 0.3f * std::sin (kTwoPi * (ph2 - std::floor (ph2)));
+                const float d = std::max (2.0f, center + depth * m + (float) v * 0.0007f * sr);
+                const float pan = ((v & 1) ? 1.0f : -1.0f) * wide * (0.4f + 0.12f * (float) v);
+                const float sL = ch[0].read (d), sR = ch[1].read (d);
+                oL += sL * (1.0f - std::max (0.0f, pan)) * 0.3f + sR * std::max (0.0f, -pan) * 0.3f;
+                oR += sR * (1.0f - std::max (0.0f, -pan)) * 0.3f + sL * std::max (0.0f, pan) * 0.3f;
+            }
+            ensLp[0] += a * (oL - ensLp[0]); ensLp[1] += a * (oR - ensLp[1]);
+            ensPh += inc; if (ensPh >= 1.0f) ensPh -= 1.0f;
+            L[i] = 0.5f * L[i] + ensLp[0]; R[i] = 0.5f * R[i] + ensLp[1];
+        }
+    }
+
+    // ---- Atraso de 4 taps (p: tempo base, espalhamento, feedback, tom, estéreo) ----
+    void doMultiTap (const float* p, float* L, float* R, int n)
+    {
+        const float base = mapLog (p[0], 30.0f, 500.0f) * 0.001f * sr, spread = lerpf (0.5f, 1.0f, p[1]), fb = mapLin (p[2], 0.0f, 0.75f), st = p[4];
+        const float a = 1.0f - std::exp (-kTwoPi * mapLog (p[3], 800, 12000) / sr);
+        static const float gain[4] = { 1.0f, 0.72f, 0.52f, 0.38f };
+        for (int i = 0; i < n; ++i)
+        {
+            float tap[2][4];
+            for (int c = 0; c < 2; ++c)
+                for (int k = 0; k < 4; ++k) tap[c][k] = dl[c].read (std::min (base * (float) (k + 1) * spread, sr * 2.3f)) * gain[k];
+            for (int c = 0; c < 2; ++c) { mtLp[c] += a * (tap[c][3] - mtLp[c]); mtLp[c] = flushDenorm (mtLp[c]); }
+            dl[0].write (fastTanh (L[i] + fb * mtLp[0])); dl[1].write (fastTanh (R[i] + fb * mtLp[1]));
+            float oL = 0, oR = 0;
+            for (int k = 0; k < 4; ++k)
+            {
+                const float gL = 1.0f - st * ((k & 1) ? 1.0f : 0.0f), gR = 1.0f - st * ((k & 1) ? 0.0f : 1.0f);   // taps alternados esquerda/direita
+                oL += tap[0][k] * gL; oR += tap[1][k] * gR;
+            }
+            L[i] = oL * 0.7f; R[i] = oR * 0.7f;
+        }
+    }
+
+    // ---- Transposição (p: semitons ±12, afinação fina ±50 cents, tamanho do grão, feedback, estéreo) ----
+    void doPitch (const float* p, float* L, float* R, int n)
+    {
+        const float st = std::round (mapLin (p[0], -12.0f, 12.0f)) + mapLin (p[1], -0.5f, 0.5f), grain = mapLin (p[2], 0.025f, 0.08f) * sr, fb = mapLin (p[3], 0.0f, 0.6f), det = (p[4] - 0.5f) * 0.2f;
+        const float rL = std::pow (2.0f, (st + det) / 12.0f), rR = std::pow (2.0f, (st - det) / 12.0f);
+        for (int i = 0; i < n; ++i)
+        {
+            const float yL = psA[0].tick (L[i] + fb * shFb[0], rL, grain), yR = psA[1].tick (R[i] + fb * shFb[1], rR, grain);
+            shFb[0] = flushDenorm (fastTanh (yL)); shFb[1] = flushDenorm (fastTanh (yR));
+            L[i] = yL; R[i] = yR;
+        }
+    }
+
+    // ---- Shimmer: reverb com +12 semitons na realimentação (p: tamanho, decaimento, amortecimento, shimmer, largura) ----
+    //  a realimentação passa por um anel de 32 amostras e o reverb corre em segmentos de até 32, por isso o
+    //  resultado não depende do tamanho do bloco do anfitrião
+    void doShimmer (const float* p, float* L, float* R, int n)
+    {
+        const float rp[5] = { p[0], p[1], p[2], 0.1f, p[4] };
+        const float amt = p[3], fbg = 0.45f * amt, grain = 0.05f * sr;
+        int done = 0;
+        while (done < n)
+        {
+            const int m = std::min (32, n - done);
+            float* l = L + done; float* r = R + done;
+            for (int i = 0; i < m; ++i) { const int k = (shN + i) & 31; l[i] += fbg * shBufL[k]; r[i] += fbg * shBufR[k]; }
+            doReverb (rp, l, r, m);
+            for (int i = 0; i < m; ++i)
+            {
+                const int k = (shN + i) & 31;
+                const float uL = psB[0].tick (l[i], 2.0f, grain), uR = psB[1].tick (r[i], 2.0f, grain);
+                shBufL[k] = flushDenorm (fastTanh (uL)); shBufR[k] = flushDenorm (fastTanh (uR));
+                l[i] += amt * uL; r[i] += amt * uR;
+            }
+            shN = (shN + m) & 31; done += m;
+        }
+    }
 };
 
 // ----------------------------------------------------------------------------
@@ -338,10 +475,10 @@ public:
     void prepare (float sampleRate)
     {
         sr = sampleRate; la = std::max (8, (int) (0.0015f * sr));
-        bufL.assign ((size_t) la + 1, 0.0f); bufR.assign ((size_t) la + 1, 0.0f); win.assign ((size_t) la + 1, 0.0f); reset();
+        bufL.assign ((size_t) la + 1, 0.0f); bufR.assign ((size_t) la + 1, 0.0f); dqI.assign ((size_t) la + 3, 0); dqV.assign ((size_t) la + 3, 0.0f); reset();
         relC = std::exp (-1.0f / (0.08f * sr)); atkC = 1.0f - std::exp (-1.0f / (0.0004f * sr));
     }
-    void reset() { std::fill (bufL.begin(), bufL.end(), 0.0f); std::fill (bufR.begin(), bufR.end(), 0.0f); std::fill (win.begin(), win.end(), 0.0f); pos = 0; gain = 1.0f; }
+    void reset() { std::fill (bufL.begin(), bufL.end(), 0.0f); std::fill (bufR.begin(), bufR.end(), 0.0f); dqHead = dqTail = dqCount = 0; cnt = 0; pos = 0; gain = 1.0f; }
     int latency() const { return la; }
     void process (float* L, float* R, int n, float ceilingDb, bool on)
     {
@@ -349,9 +486,13 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const float pk = std::max (std::fabs (L[i]), std::fabs (R[i]));
-            bufL[(size_t) pos] = L[i]; bufR[(size_t) pos] = R[i]; win[(size_t) pos] = pk;
-            // máximo na janela de lookahead (pequena: varredura direta)
-            float m = 0; for (int k = 0; k <= la; ++k) m = std::max (m, win[(size_t) k]);
+            bufL[(size_t) pos] = L[i]; bufR[(size_t) pos] = R[i];
+            // máximo da janela de lookahead (la+1 amostras) por fila monótona: O(1) amortizado (auditoria C-06)
+            const int cap = la + 3;
+            while (dqCount > 0 && dqV[(size_t) ((dqTail + cap - 1) % cap)] <= pk) { dqTail = (dqTail + cap - 1) % cap; --dqCount; }
+            dqI[(size_t) dqTail] = cnt; dqV[(size_t) dqTail] = pk; dqTail = (dqTail + 1) % cap; ++dqCount;
+            while (dqCount > 0 && dqI[(size_t) dqHead] <= cnt - (long) (la + 1)) { dqHead = (dqHead + 1) % cap; --dqCount; }
+            const float m = dqV[(size_t) dqHead]; ++cnt;
             const float target = (on && m > ceil) ? ceil / m : 1.0f;
             gain += (target - gain) * (target < gain ? atkC : (1.0f - relC));
             int rp = pos + 1; if (rp > la) rp = 0;                 // amostra mais antiga
@@ -361,6 +502,6 @@ public:
         }
     }
 private:
-    float sr = 44100, gain = 1, relC = 0.99f, atkC = 0.2f; int la = 66, pos = 0; std::vector<float> bufL, bufR, win;
+    float sr = 44100, gain = 1, relC = 0.99f, atkC = 0.2f; int la = 66, pos = 0; std::vector<float> bufL, bufR; std::vector<long> dqI; std::vector<float> dqV; int dqHead = 0, dqTail = 0, dqCount = 0; long cnt = 0;
 };
 } // namespace sk

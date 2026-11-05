@@ -8,6 +8,44 @@
 
 namespace ui
 {
+// morph entre o som actual e outro preset: botão para escolher o alvo + slider 0..1
+class MorphBox : public juce::Component
+{
+public:
+    explicit MorphBox (SynthKeyProcessor& p) : proc (p)
+    {
+        addAndMakeVisible (pick); addAndMakeVisible (amt);
+        pick.setButtonText (TX ("MORPH \xE2\x86\x92 escolher preset"));
+        pick.setTooltip (TX ("Escolhe um preset-alvo e mistura o som actual com ele"));
+        pick.onClick = [this] { showMenu(); };
+        amt.setSliderStyle (juce::Slider::LinearHorizontal); amt.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        amt.setRange (0.0, 1.0, 0.001); amt.setEnabled (false);
+        amt.onValueChange = [this] { proc.setMorph ((float) amt.getValue()); };
+        amt.onDragEnd = [this] { /* o estado final fica como está; o undo regista-o */ };
+    }
+    void resized() override { auto r = getLocalBounds(); pick.setBounds (r.removeFromTop (r.getHeight() / 2 - 1)); amt.setBounds (r); }
+private:
+    void showMenu()
+    {
+        const auto& list = proc.presetList();
+        std::map<std::string, std::vector<int>> fam;
+        for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].module.empty()) fam[list[(size_t) i].family.empty() ? list[(size_t) i].category : list[(size_t) i].family].push_back (i);
+        juce::PopupMenu m; int id = 1; std::vector<int> ids;
+        for (auto& kv : fam)
+        {
+            juce::PopupMenu sub;
+            for (int i : kv.second) { sub.addItem (id++, juce::String::fromUTF8 (list[(size_t) i].name.c_str())); ids.push_back (i); }
+            m.addSubMenu (juce::String::fromUTF8 (kv.first.c_str()), sub);
+        }
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&pick), [this, ids] (int r)
+        {
+            if (r <= 0 || r > (int) ids.size()) return;
+            if (proc.beginMorph (ids[(size_t) (r - 1)])) { pick.setButtonText (TX ("MORPH \xE2\x86\x92 ") + proc.morphTargetName()); amt.setEnabled (true); amt.setValue (0.0, juce::dontSendNotification); }
+        });
+    }
+    SynthKeyProcessor& proc; juce::TextButton pick; juce::Slider amt;
+};
+
 class OrbitSomPage : public Page
 {
 public:
@@ -56,7 +94,7 @@ public:
         Page::tick();
         orb.update(); curve.update(); rail.update(); matrix.update(); fx.update(); arp->update();
         matCard->setRight (juce::String (matrix.activeCount()) + TX (" / 16 liga\xC3\xA7\xC3\xB5" "es"));
-        const auto ty = [this] (int idx) { return juce::StringArray::fromTokens (TX (kParams[P_A_TYPE].choices), "|", "")[juce::jlimit (0, 2, (int) proc.getReal (idx))]; };
+        const auto ty = [this] (int idx) { return juce::StringArray::fromTokens (TX (kParams[P_A_TYPE].choices), "|", "")[juce::jlimit (0, 3, (int) proc.getReal (idx))]; };
         const juce::String la = TX ("A \xC2\xB7 ") + ty (P_A_TYPE), lb = TX ("B \xC2\xB7 ") + ty (P_B_TYPE);
         if (la != lastA || lb != lastB) { lastA = la; lastB = lb; tabs.setLabels ({ la, lb, TX ("SUB + RU\xC3\x8D" "DO"), "VOZES" }, { 120, 120, 104, 62 }); }
         refreshFilterVis();
@@ -84,16 +122,18 @@ private:
         auto* s = bare ({ 612, 94, 296, 200 }); group (E, s);
         auto KK = [&] (int idx, const char* label, int lvl, std::function<bool()> sh = {}) { return K (s, idx, TX (label), lvl, std::move (sh), 52, 64); };
         KK (P_A_LEVEL + o, "N\xC3\x8DVEL", 1); KK (P_A_PAN + o, "PAN", 2); KK (P_A_COARSE + o, "SEMITONS", 1); KK (P_A_FINE + o, "FINO", 2);
-        KK (P_A_UNI + o, "UNISSON", 1); KK (P_A_UNIDET + o, "DETUNE", 1, [=] { return val (P_A_UNI + o) > 1; }); KK (P_A_UNISPR + o, "ESPALHAR", 2, [=] { return val (P_A_UNI + o) > 1; });
+        KK (P_A_UNI + o, "UNISSON", 1, [=] { return type() != 3; }); KK (P_A_UNIDET + o, "DETUNE", 1, [=] { return type() != 3 && val (P_A_UNI + o) > 1; }); KK (P_A_UNISPR + o, "ESPALHAR", 2, [=] { return type() != 3 && val (P_A_UNI + o) > 1; });
+        { const int ks = E ? P_B_KS_DAMP : P_A_KS_DAMP; KK (ks, "AMORTEC.", 1, [=] { return type() == 3; }); KK (ks + 1, "DURA\xC3\x87\xC3\x83O", 1, [=] { return type() == 3; }); KK (ks + 2, "PALHETA", 2, [=] { return type() == 3; }); }
+        KK (E ? P_B_KEYLO : P_A_KEYLO, "TECLA M\xC3\x8DN", 3); KK (E ? P_B_KEYHI : P_A_KEYHI, "TECLA M\xC3\x81X", 3);
         KK (P_A_PWM + o, "PWM", 1, [=] { return type() == 0 && val (P_A_WAVE + o) == 3; });
         KK (P_A_SYNC + o, "SYNC", 2, [=] { return type() == 0; }); KK (P_A_FMAMT + o, "FM", 2, [=] { return type() == 0; });
         C (s, P_A_FMRAT + o, 52, 3, [=] { return type() == 0; }, 20);
-        KK (P_A_FOLD + o, "DOBRA", 2, [=] { return type() != 2; });
+        KK (P_A_FOLD + o, "DOBRA", 2, [=] { return type() == 0 || type() == 1; });
         KK (P_A_WTPOS + o, "POSI\xC3\x87\xC3\x83O", 1, [=] { return type() == 1; }); KK (P_A_WARP + o, "WARP", 2, [=] { return type() == 1; });
         KK (P_A_START + o, "IN\xC3\x8DICIO", 2, [=] { return type() == 2; });
         T (s, P_A_LOOP + o, "LOOP", 62, 2, [=] { return type() == 2; }, 18); T (s, P_A_REV + o, "REV", 60, 2, [=] { return type() == 2; }, 18);
         T (s, P_A_RR + o, "RR", 56, 3, [=] { return type() == 2; }, 18); T (s, P_A_TRACK + o, "TECLA", 64, 3, [=] { return type() == 2; }, 18);
-        KK (P_A_PHASE + o, "FASE", 3, [=] { return type() != 2; });
+        KK (P_A_PHASE + o, "FASE", 3, [=] { return type() == 0 || type() == 1; });
     }
     void buildSubNoise()
     {
@@ -108,6 +148,7 @@ private:
         K (s, P_POLYPHONY, "POLIFONIA", 1, {}, 52, 64); K (s, P_GLIDE, "GLIDE", 1, {}, 52, 64); K (s, P_TRANSPOSE, "TRANSP.", 1, {}, 52, 64); K (s, P_BLEND, TX ("A \xE2\x97\x82\xE2\x96\xB8 B"), 1, {}, 52, 64);
         K (s, P_PB_RANGE, "PITCH BEND", 2, {}, 52, 64); K (s, P_TUNE, TX ("AFINA\xC3\x87\xC3\x83O"), 2, {}, 52, 64); K (s, P_VEL_SENS, "VELOC.", 2, {}, 52, 64);
         s->newRow(); C (s, P_OUT_BUS, 140, 3);
+        s->newRow(); s->add (new MorphBox (proc), 280, 44, 1);
     }
     void buildFilters()
     {

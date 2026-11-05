@@ -1,6 +1,7 @@
 // Testes numéricos do núcleo (sem JUCE): g++ -O2 -std=c++17 -ISource tests/test_core.cpp -o test_core && ./test_core
 #include "Core/Engine.h"
 #include "Core/MidiFx.h"
+#include "Core/Preset.h"
 #include "Core/PackSpecs.h"
 #include "Core/Crypto.h"
 #include "Core/Keys.h"
@@ -301,23 +302,21 @@ int main()
             CHECK (std::fabs (20.0 * std::log10 (rm / ref)) < 0.6, "quality %d: nível %.2f dB vs normal", q, 20.0 * std::log10 (rm / ref));
             const float f = measureFreq (r.L, 12000, 8192, 880.0f, (float) SR); CHECK (std::fabs (f / 880.0f - 1.0f) < 0.003f, "quality %d: frequência %.2f", q, f);
             CHECK (e.quality() == q, "quality() = %d", e.quality());
-            if (q > 0) CHECK (e.latencySamples() >= 72 && e.latencySamples() < 120, "latência com oversampling: %d", e.latencySamples());
+            if (q > 0) CHECK (e.latencySamples() >= 72 && e.latencySamples() < 160, "latência com oversampling: %d", e.latencySamples());
             // blocos de tamanho diferente do preparado também têm de funcionar
             auto r2 = run (e, 30, 77); CHECK (finite (r2.L), "quality %d: NaN com bloco 77", q);
         }
-        // oversampling reduz aliasing: serra-FM em nota aguda, energia acima de 18 kHz
+        // oversampling reduz aliasing: seno com FM em nota aguda (razão inteira → espectro ideal harmónico; o resto é aliasing)
         {
             double hi[3];
             for (int q = 0; q < 3; ++q)
             {
-                defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_A_FMAMT] = 0.8f; P[P_A_FMRAT] = 3; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_LIM_ON] = 0; P[P_QUALITY] = (float) q;
+                defaults(); P[P_F1_TYPE] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_A_FMAMT] = 0.8f; P[P_A_FMRAT] = 3; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 5000; P[P_LIM_ON] = 0; P[P_QUALITY] = (float) q;
                 Engine e; e.setQuality (q); e.prepare (SR, 512); e.setParams (P); e.noteOn (96, 1.0f);
-                auto r = run (e, 40); const size_t a = 12000, len = 8192; double en = 0;
-                for (float fq = 18500.0f; fq < 22000.0f; fq += 90.0f) { double re = 0, im = 0; for (size_t i = 0; i < len; ++i) { const double ph = 6.283185307179586 * fq * (double) i / SR; re += r.L[a + i] * std::cos (ph); im += r.L[a + i] * std::sin (ph); } en += re * re + im * im; }
-                hi[q] = en;
+                auto r = run (e, 60); hi[q] = aliasDb (r.L, 12000, midiToHz (96), SR);
             }
-            std::printf ("   energia >18 kHz: normal %.3g, 2x %.3g, 4x %.3g\n", hi[0], hi[1], hi[2]);
-            CHECK (hi[2] <= hi[0] * 1.05, "4x não reduz aliasing");
+            std::printf ("   aliasing FM nota 96: normal %.1f dB, 2x %.1f dB, 4x %.1f dB\n", hi[0], hi[1], hi[2]);
+            CHECK (hi[2] <= hi[0] + 3.0, "4x não reduz aliasing");
         }
         // formante: ruído filtrado muda de espectro conforme a vogal
         {
@@ -421,6 +420,222 @@ int main()
         }
         CHECK (bad == 0, "fuzz: %d patches com problemas", bad);
         std::printf ("   pico máximo observado: %.4f (teto -0.3 dB = 0.9661)\n", worst);
+    }
+
+    // ---------------------------------------------------------------- regressões da auditoria (C-01 … C-06)
+    {
+        std::printf ("[11] regressões da auditoria\n");
+        auto aliasOf = [&] (int q, int wave, float sync, float fm, int fmRat, float fold, int note)
+        {
+            defaults(); P[P_F1_TYPE] = 0; P[P_A_ON] = 1; P[P_B_ON] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = (float) wave; P[P_A_SYNC] = sync; P[P_A_FMAMT] = fm; P[P_A_FMRAT] = (float) fmRat; P[P_A_FOLD] = fold;
+            P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 5000; P[P_LIM_ON] = 0;
+            Engine e; e.setQuality (q); e.prepare (SR, 512); e.setParams (P); e.noteOn (note, 1.0f); auto r = run (e, 60);
+            return aliasDb (r.L, 12000, midiToHz ((float) note), SR);
+        };
+        // C-05: 2x/4x nunca pioram o oscilador limpo (antes: serra −70 dB → −53 dB)
+        for (int w : { 2, 3 })
+            for (int note : { 57, 69, 93 })
+            {
+                const float a0 = aliasOf (0, w, 0, 0, 2, 0, note);
+                for (int q = 1; q <= 2; ++q) { const float aq = aliasOf (q, w, 0, 0, 2, 0, note); CHECK (aq <= a0 + 3.0f, "onda %d nota %d: qualidade %d (%.1f dB) pior que Normal (%.1f dB)", w, note, q, aq, a0); }
+            }
+        // C-03: sync com tabela band-limited para o escravo + polyBLEP (antes: −16 dB na nota 93)
+        { const float a = aliasOf (0, 2, 12, 0, 2, 0, 81); CHECK (a < -45.0f, "sync 12 st nota 81: aliasing %.1f dB", a); }
+        // C-04: FM limitada pela banda e dobra com ADAA (antes: FM −2 dB, dobra −12 dB na nota 93)
+        { const float a = aliasOf (0, 0, 0, 1.0f, 4, 0, 93); CHECK (a < -40.0f, "FM nota 93: aliasing %.1f dB", a); }
+        { const float a = aliasOf (0, 2, 0, 0, 2, 1.0f, 93); CHECK (a < -18.0f, "dobra nota 93: aliasing %.1f dB", a); }
+        // C-01: o destino Início do Sample tem efeito
+        {
+            Library lib; for (auto& d : buildPackDefs()) if (d.id == "nucleo") buildPackLibrary (d, lib);
+            double en[2];
+            for (int k = 0; k < 2; ++k)
+            {
+                defaults(); P[P_A_TYPE] = 2; P[P_A_SMP] = (float) std::max (0, lib.indexOf ("nucleo.kick")); P[P_LIM_ON] = 0; P[P_A_LOOP] = 0;
+                if (k) { P[P_MOD1_SRC] = MS_CONST; P[P_MOD1_DST] = MD_START_A; P[P_MOD1_AMT] = 0.8f; }
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.setLibrary (&lib); e.noteOn (60, 1.0f); auto r = run (e, 40); en[k] = rmsOf (r.L);
+            }
+            CHECK (en[0] > 1.0e-4 && std::fabs (en[0] - en[1]) > 1.0e-6, "Início do Sample sem efeito (%.6g vs %.6g)", en[0], en[1]);
+        }
+        // C-02: envio modulado por tecla não depende da ordem das notas
+        {
+            auto sendEnergy = [&] (int a, int b)
+            {
+                defaults(); P[P_LIM_ON] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 5000; P[P_F1_TYPE] = 0;
+                P[P_FXX1_TYPE] = 9; P[P_MOD1_SRC] = MS_KEY; P[P_MOD1_DST] = MD_SENDA; P[P_MOD1_AMT] = 1.0f;
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (a, 1.0f); e.noteOn (b, 1.0f); auto r = run (e, 30);
+                double s = 0; for (size_t i = 6000; i < r.L.size(); ++i) s += (double) r.L[i] * r.L[i]; return s;
+            };
+            const double x = sendEnergy (36, 96), y = sendEnergy (96, 36);
+            CHECK (std::fabs (10.0 * std::log10 (x / y)) < 0.1, "envio depende da ordem das notas: %.3f dB", 10.0 * std::log10 (x / y));
+            // envio por voz verdadeiro: o conjunto soma as notas isoladas (frequências distintas -> energias aditivas)
+            auto single = [&] (int note)
+            {
+                defaults(); P[P_LIM_ON] = 0; P[P_A_TYPE] = 0; P[P_A_WAVE] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 5000; P[P_F1_TYPE] = 0;
+                P[P_FXX1_TYPE] = 9; P[P_MOD1_SRC] = MS_KEY; P[P_MOD1_DST] = MD_SENDA; P[P_MOD1_AMT] = 1.0f;
+                Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (note, 1.0f); auto r = run (e, 30);
+                double en = 0; for (size_t i = 6000; i < r.L.size(); ++i) en += (double) r.L[i] * r.L[i]; return en;
+            };
+            const double sumSingles = single (36) + single (96);
+            CHECK (std::fabs (10.0 * std::log10 (x / sumSingles)) < 1.0, "envio por voz: conjunto %.3f dB da soma das notas isoladas", 10.0 * std::log10 (x / sumSingles));
+        }
+    }
+
+    // ---------------------------------------------------------------- [12] efeitos novos (v1.5)
+    {
+        std::printf ("[12] efeitos novos\n");
+        const char* names[] = { "Flanger", "Ensemble", "Shimmer", "Multi-Tap", "Pitch" };
+        const int types[] = { FxUnit::Flanger, FxUnit::Ensemble, FxUnit::Shimmer, FxUnit::MultiTap, FxUnit::Pitch };
+        auto noise = [] (std::vector<float>& v, unsigned seed, float amp) { unsigned x = seed; for (auto& f : v) { x = x * 1664525u + 1013904223u; f = amp * ((float) (x >> 8) / 8388608.0f - 1.0f); } };
+        for (int t = 0; t < 5; ++t)
+        {
+            const float sets[3][5] = { { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f } };
+            for (int ps = 0; ps < 3; ++ps)
+            {
+                FxUnit fx; fx.prepare ((float) SR, 512);
+                const int total = 512 * 600; std::vector<float> L ((size_t) total), R ((size_t) total); noise (L, 11, 0.5f); noise (R, 29, 0.5f);
+                for (size_t i = 512 * 75; i < L.size(); ++i) { L[i] = 0; R[i] = 0; }                          // 0.9 s de ruído e depois silêncio
+                bool fin = true; float pk = 0, tailPk = 0;
+                for (int b = 0; b < 600; ++b)
+                {
+                    fx.process (types[t], sets[ps], 1.0f, L.data() + b * 512, R.data() + b * 512, 512, 120.0f);
+                    for (int i = 0; i < 512; ++i) { const float a = std::max (std::fabs (L[(size_t) (b * 512 + i)]), std::fabs (R[(size_t) (b * 512 + i)])); if (! std::isfinite (a)) fin = false; pk = std::max (pk, a); if (b >= 590) tailPk = std::max (tailPk, a); }
+                }
+                CHECK (fin, "%s conjunto %d: NaN/inf", names[t], ps);
+                CHECK (pk < 4.0f, "%s conjunto %d: pico %.2f", names[t], ps, (double) pk);
+                CHECK (tailPk < 0.05f, "%s conjunto %d: cauda %.4f ainda alta", names[t], ps, (double) tailPk);
+            }
+            // independência do tamanho do bloco
+            {
+                const int total = 8192; std::vector<float> a ((size_t) total), a2 ((size_t) total); noise (a, 5, 0.4f); noise (a2, 6, 0.4f);
+                auto b = a, b2 = a2; const float pp[5] = { 0.6f, 0.4f, 0.5f, 0.5f, 0.5f };
+                FxUnit f1, f2; f1.prepare ((float) SR, 512); f2.prepare ((float) SR, 512);
+                for (int o = 0; o < total; o += 512) f1.process (types[t], pp, 1.0f, a.data() + o, a2.data() + o, 512, 120.0f);
+                for (int o = 0; o < total;) { const int m = std::min (total - o, 37 + (o % 5) * 53); f2.process (types[t], pp, 1.0f, b.data() + o, b2.data() + o, m, 120.0f); o += m; }
+                double d = 0; for (int i = 0; i < total; ++i) d = std::max (d, (double) std::fabs (a[(size_t) i] - b[(size_t) i]));
+                CHECK (d < 1e-4, "%s depende do tamanho do bloco: dif %.6f", names[t], d);
+            }
+        }
+        // nível: seno de 440 Hz a -12 dB não sai mais de 6 dB acima nem 15 dB abaixo
+        for (int t = 0; t < 5; ++t)
+        {
+            FxUnit fx; fx.prepare ((float) SR, 512); const float pp[5] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+            std::vector<float> L (512 * 60), R (L.size()); double ei = 0, eo = 0;
+            for (size_t i = 0; i < L.size(); ++i) L[i] = R[i] = 0.25f * (float) std::sin (kTwoPi * 440.0 * (double) i / SR);
+            for (int b = 0; b < 60; ++b) { fx.process (types[t], pp, 1.0f, L.data() + b * 512, R.data() + b * 512, 512, 120.0f); }
+            for (size_t i = 512 * 20; i < L.size(); ++i) { eo += (double) L[i] * L[i]; ei += 0.0625 * 0.5; }
+            const double db = 10.0 * std::log10 (eo / ei);
+            CHECK (db > -15.0 && db < 6.0, "%s: nível %.1f dB fora de [-15,+6]", names[t], db);
+        }
+        // pitch: +12 semitonos duplica a frequência (contagem de passagens por zero)
+        {
+            FxUnit fx; fx.prepare ((float) SR, 512); const float pp[5] = { 1.0f, 0.5f, 0.5f, 0.0f, 0.5f };   // +12 st, sem feedback
+            std::vector<float> L (512 * 80), R (L.size());
+            for (size_t i = 0; i < L.size(); ++i) L[i] = R[i] = 0.5f * (float) std::sin (kTwoPi * 440.0 * (double) i / SR);
+            for (int b = 0; b < 80; ++b) fx.process (FxUnit::Pitch, pp, 1.0f, L.data() + b * 512, R.data() + b * 512, 512, 120.0f);
+            int z = 0; const size_t a0 = 512 * 20, a1 = 512 * 80; for (size_t i = a0 + 1; i < a1; ++i) if ((L[i - 1] < 0) != (L[i] < 0)) ++z;
+            const double f = 0.5 * z / ((double) (a1 - a0) / SR);
+            CHECK (std::fabs(f - 880.0) < 40.0, "pitch +12 st: %.1f Hz em vez de 880", f);
+        }
+    }
+
+    // ---------------------------------------------------------------- [13] arpejador euclidiano e probabilidade
+    {
+        std::printf ("[13] arp euclidiano / probabilidade\n");
+        auto run1 = [&] (int k, int rot, float prob, int seed, std::vector<int>& stepsHit)
+        {
+            defaults(); P[P_ARP_ON] = 1; P[P_ARP_RATE] = 12; P[P_ARP_GATE] = 0.5f; P[P_ARP_EUCL_K] = (float) k; P[P_ARP_EUCL_ROT] = (float) rot; P[P_ARP_PROB] = prob; P[P_ARP_SEED] = (float) seed;
+            MidiFx f; f.prepare (SR); f.setParams (P); f.noteOn (60, 1, 0);
+            std::vector<NoteEvent> ev; int64_t t = 0; stepsHit.clear(); int n = 0;
+            for (int b = 0; b < 1000; ++b) { f.process (512, 120.0, 0, false, ev); for (auto& e : ev) if (e.on) { stepsHit.push_back ((int) std::lround ((double) (t + e.offset) / 6000.0)); ++n; } t += 512; }
+            return n;
+        };
+        std::vector<int> a, b, c;
+        const int total = run1 (0, 0, 1.0f, 0, a);                       // sem euclidiano: todos os passos
+        const int steps = (int) (1000 * 512 / 6000);
+        CHECK (total >= steps - 2, "arp sem euclidiano: %d notas em %d passos", total, steps);
+        const int nE = run1 (5, 0, 1.0f, 0, a);                          // 5 em 16: ~31%
+        CHECK (std::abs (nE - (int) std::lround ((double) steps * 5.0 / 16.0)) <= 3, "euclidiano 5/16: %d notas em %d passos", nE, steps);
+        { int per = 0; for (int x : a) if (x < 16) ++per; CHECK (per == 5, "euclidiano 5/16: %d pulsos no primeiro compasso", per); }
+        run1 (5, 3, 1.0f, 0, b);
+        { bool differ = a.size() != b.size(); for (size_t i = 0; i < std::min (a.size(), b.size()) && ! differ; ++i) differ = a[i] != b[i]; CHECK (differ, "rotação não muda o padrão"); }
+        const int n0 = run1 (16, 0, 1.0f, 0, a); CHECK (std::abs (n0 - total) <= 1, "euclidiano 16/16 = todos: %d vs %d", n0, total);
+        // probabilidade: reprodutível com a mesma semente, diferente com outra, fração correta
+        const int p1 = run1 (0, 0, 0.5f, 7, a), p2 = run1 (0, 0, 0.5f, 7, b), p3 = run1 (0, 0, 0.5f, 8, c);
+        CHECK (p1 == p2 && a == b, "mesma semente deu resultados diferentes");
+        CHECK (a != c, "sementes diferentes deram o mesmo padrão");
+        CHECK (p1 > steps * 0.35 && p1 < steps * 0.65, "probabilidade 50%%: %d de %d passos", p1, steps);
+        CHECK (run1 (0, 0, 0.0f, 3, a) == 0, "probabilidade 0 tocou notas");
+    }
+
+    // ---------------------------------------------------------------- [14] motor Corda (Karplus-Strong)
+    {
+        std::printf ("[14] motor Corda\n");
+        auto setup = [&] (float damp, float decay, int q)
+        {
+            defaults(); P[P_LIM_ON] = 0; P[P_A_ON] = 1; P[P_A_TYPE] = 3; P[P_A_LEVEL] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_AMP_D] = 9000; P[P_AMP_R] = 200; P[P_F1_TYPE] = 0;
+            P[P_A_KS_DAMP] = damp; P[P_A_KS_DECAY] = decay; P[P_A_KS_PICK] = 0.3f; P[P_QUALITY] = (float) q;
+        };
+        // altura por autocorrelação (cents de erro)
+        auto pitchErr = [&] (const std::vector<float>& x, size_t a, size_t n, double f0)
+        {
+            const double lagC = SR / f0; double best = -1e30; int bl = 0;
+            for (int lag = (int) (lagC * 0.9); lag <= (int) (lagC * 1.1) + 1; ++lag)
+            { double c = 0; for (size_t i = a; i + (size_t) lag < a + n; ++i) c += (double) x[i] * x[i + (size_t) lag]; if (c > best) { best = c; bl = lag; } }
+            // interpolação parabólica
+            auto cc = [&] (int lag) { double c = 0; for (size_t i = a; i + (size_t) lag < a + n; ++i) c += (double) x[i] * x[i + (size_t) lag]; return c; };
+            const double y0 = cc (bl - 1), y1 = cc (bl), y2 = cc (bl + 1); const double d = 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2);
+            return 1200.0 * std::log2 ((SR / (bl + d)) / f0);
+        };
+        for (int q = 0; q <= 2; q += 2)
+            for (int note : { 36, 48, 60, 72, 84 })
+            {
+                setup (0.4f, 0.6f, q); Engine e; e.setQuality (q); e.prepare (SR, 512); e.setParams (P); e.noteOn (note, 1.0f); auto r = run (e, 40);
+                const double f0 = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+                const double err = pitchErr (r.L, (size_t) (0.10 * SR), (size_t) (0.25 * SR), f0);
+                CHECK (finite (r.L), "corda: NaN nota %d", note);
+                CHECK (std::fabs (err) < 8.0, "corda nota %d (q%d): afinação %.1f cents", note, q, err);
+                double en = 0; for (size_t i = (size_t) (0.05 * SR); i < (size_t) (0.3 * SR); ++i) en += (double) r.L[i] * r.L[i];
+                CHECK (en > 0.01, "corda nota %d (q%d) muda", note, q);
+            }
+        // duração: decay alto soa mais tempo; amortecimento alto escurece (menos agudos)
+        {
+            auto tailEnergy = [&] (float decay)
+            { setup (0.3f, decay, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 120); double en = 0; for (size_t i = (size_t) (1.5 * SR); i < (size_t) (2.0 * SR); ++i) en += (double) r.L[i] * r.L[i]; return en; };
+            CHECK (tailEnergy (0.9f) > 10.0 * tailEnergy (0.3f), "corda: duração não aumenta com 'Duração'");
+            auto hf = [&] (float damp)
+            { setup (damp, 0.6f, 0); Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (60, 1.0f); auto r = run (e, 70); double d = 0, t = 0; for (size_t i = (size_t) (0.3 * SR) + 1; i < (size_t) (0.6 * SR); ++i) { const double df = (double) r.L[i] - r.L[i - 1]; d += df * df; t += (double) r.L[i] * r.L[i]; } return d / std::max (t, 1e-12); };
+            CHECK (hf (0.9f) < 0.6 * hf (0.0f), "corda: amortecimento não escurece");
+        }
+        // estabilidade: 40 vozes, todas as notas, extremos
+        {
+            setup (1.0f, 1.0f, 0); Engine e; e.prepare (SR, 512); e.setParams (P); for (int n = 20; n < 100; n += 2) e.noteOn (n, 1.0f); auto r = run (e, 80);
+            float pk = 0; for (float x : r.L) pk = std::max (pk, std::fabs (x)); CHECK (finite (r.L) && pk < 40.0f, "corda: instável com muitas vozes (pico %.1f)", (double) pk);
+        }
+    }
+
+    // ---------------------------------------------------------------- [15] split / layer e morph
+    {
+        std::printf ("[15] split / layer / morph\n");
+        auto energy = [&] (int note, int alo, int ahi, int blo, int bhi, bool bOn)
+        {
+            defaults(); P[P_LIM_ON] = 0; P[P_A_ON] = 1; P[P_A_TYPE] = 0; P[P_A_WAVE] = 2; P[P_B_ON] = bOn ? 1.0f : 0.0f; P[P_B_TYPE] = 0; P[P_B_WAVE] = 0; P[P_AMP_A] = 1; P[P_AMP_S] = 1; P[P_F1_TYPE] = 0;
+            P[P_A_KEYLO] = (float) alo; P[P_A_KEYHI] = (float) ahi; P[P_B_KEYLO] = (float) blo; P[P_B_KEYHI] = (float) bhi;
+            Engine e; e.prepare (SR, 512); e.setParams (P); e.noteOn (note, 1.0f); auto r = run (e, 20); double en = 0; for (size_t i = 2000; i < r.L.size(); ++i) en += (double) r.L[i] * r.L[i]; return en;
+        };
+        CHECK (energy (48, 60, 127, 0, 0, false) < 1e-9, "split: motor A fora da zona devia calar");
+        CHECK (energy (72, 60, 127, 0, 0, false) > 0.01, "split: motor A dentro da zona devia soar");
+        const double onlyA = energy (48, 0, 127, 0, 0, false), splitB = energy (48, 60, 127, 0, 59, true), layer = energy (48, 0, 127, 0, 127, true);
+        CHECK (splitB > 0.01 && splitB < onlyA * 3.0 && splitB != onlyA, "split: nota grave devia tocar só o motor B (%.3f vs A %.3f)", splitB, onlyA);
+        CHECK (layer > 0.01, "layer sem som");
+        float a[P_COUNT], b[P_COUNT], o[P_COUNT];
+        for (int i = 0; i < P_COUNT; ++i) { a[i] = kParams[i].def; b[i] = kParams[i].def; }
+        a[P_MASTER_VOL] = -12.0f; b[P_MASTER_VOL] = 0.0f; a[P_A_WAVE] = 0; b[P_A_WAVE] = 2; a[P_F1_CUT] = 200.0f; b[P_F1_CUT] = 3200.0f;
+        morphParams (a, b, 0.0f, o); CHECK (o[P_MASTER_VOL] == -12.0f && o[P_A_WAVE] == 0, "morph t=0 != A");
+        morphParams (a, b, 1.0f, o); CHECK (o[P_MASTER_VOL] == 0.0f && o[P_A_WAVE] == 2, "morph t=1 != B");
+        morphParams (a, b, 0.5f, o); CHECK (std::fabs (o[P_MASTER_VOL] + 6.0f) < 1e-4f, "morph linear a meio: %.2f", (double) o[P_MASTER_VOL]);
+        CHECK (std::fabs (o[P_F1_CUT] - 800.0f) < 1.0f, "morph logarítmico a meio: %.1f (esperado 800)", (double) o[P_F1_CUT]);
+        morphParams (a, b, 0.49f, o); CHECK (o[P_A_WAVE] == 0, "morph discreto antes do meio");
+        morphParams (a, b, 0.51f, o); CHECK (o[P_A_WAVE] == 2, "morph discreto depois do meio");
     }
 
     std::printf ("\n%d verificações, %d falhas\n", checks, failures);

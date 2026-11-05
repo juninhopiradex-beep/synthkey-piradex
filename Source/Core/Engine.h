@@ -46,7 +46,8 @@ public:
         sr = (float) sampleRate; maxN = std::max (maxBlock, kSub);
         wt = &Wavetables::get();
         for (auto& v : voices) { v.f1.prepare (sr); v.f2.prepare (sr); v.amp.setSampleRate (sr); v.e2.setSampleRate (sr); v.e3.setSampleRate (sr); }
-        for (auto* b : { &busL, &busR, &aL, &aR, &bL, &bR, &xL, &xR }) b->assign ((size_t) maxN, 0.0f);
+        for (auto* b : { &busL, &busR, &vsL, &vsR, &aL, &aR, &bL, &bR, &xL, &xR }) b->assign ((size_t) maxN, 0.0f);
+        ksSize = (int) (sr / 16.0f) + 16; ksBuf.assign ((size_t) kMaxVoices * 2 * (size_t) ksSize, 0.0f);
         for (auto& f : fx) f.prepare (sr, maxN);
         lim.prepare (sr);
         masterGain.setTime (sr, 15.0f);
@@ -57,7 +58,7 @@ public:
         for (auto& v : voices) { v.active = false; v.f1.reset(); v.f2.reset(); }
         for (auto& f : fx) f.reset();
         lim.reset(); stack.clear(); ageCounter = 0; sustain = false; lastNote = -1;
-        for (auto* b : { &busL, &busR }) std::fill (b->begin(), b->end(), 0.0f);
+        for (auto* b : { &busL, &busR, &vsL, &vsR }) std::fill (b->begin(), b->end(), 0.0f);
         masterGain.snap (1.0f); peakL = peakR = 0;
     }
     void setParams (const float* p) { prm = p; }
@@ -153,11 +154,15 @@ public:
     {
         n = std::min (n, maxN); loopSeen = false;
         std::fill (busL.begin(), busL.begin() + n, 0.0f); std::fill (busR.begin(), busR.begin() + n, 0.0f);
+        std::fill (vsL.begin(), vsL.begin() + n, 0.0f); std::fill (vsR.begin(), vsR.begin() + n, 0.0f);
         int pos = 0;
         while (pos < n)
         {
             const int m = std::min (kSub, n - pos);
-            subPpq = renderPpq; for (auto& v : voices) if (v.active) renderVoice (v, m, busL.data() + pos, busR.data() + pos);
+            subPpq = renderPpq; sendAcc[0] = sendAcc[1] = sendAcc[2] = 0.0f; sendW = 0.0f;
+            vsOutL = vsL.data() + pos; vsOutR = vsR.data() + pos;
+            for (auto& v : voices) if (v.active) renderVoice (v, m, busL.data() + pos, busR.data() + pos);
+            if (sendW > 1.0e-9f) globalDst[MD_AUXRET] = sendAcc[2] / sendW;     // o retorno é global (média ponderada); os envios A/B são por voz (vsL/vsR)
             renderPpq += (double) m * (double) bpm / (60.0 * (double) sr);
             pos += m;
         }
@@ -167,9 +172,9 @@ public:
         for (int i = 0; i < n; ++i) { aL[(size_t) i] = busL[(size_t) i] * inA; aR[(size_t) i] = busR[(size_t) i] * inA; bL[(size_t) i] = busL[(size_t) i] * inB; bR[(size_t) i] = busR[(size_t) i] * inB; }
         runChain (0, aL.data(), aR.data(), n); runChain (3, bL.data(), bR.data(), n);
         const float lvA = dbToGain (prm[P_INSA_LEVEL]), lvB = dbToGain (prm[P_INSB_LEVEL]);
-        const float sendA = clampf (prm[P_SEND_A] + globalDst[MD_SENDA], 0.0f, 1.0f), sendB = clampf (prm[P_SEND_B] + globalDst[MD_SENDB], 0.0f, 1.0f);
+        const float sendA = clampf (prm[P_SEND_A], 0.0f, 1.0f), sendB = clampf (prm[P_SEND_B], 0.0f, 1.0f);
         const float ret = dbToGain (prm[P_AUX_RETURN]) * clampf (1.0f + globalDst[MD_AUXRET], 0.0f, 2.0f);
-        for (int i = 0; i < n; ++i) { aL[(size_t) i] *= lvA; aR[(size_t) i] *= lvA; bL[(size_t) i] *= lvB; bR[(size_t) i] *= lvB; xL[(size_t) i] = aL[(size_t) i] * sendA + bL[(size_t) i] * sendB; xR[(size_t) i] = aR[(size_t) i] * sendA + bR[(size_t) i] * sendB; }
+        for (int i = 0; i < n; ++i) { aL[(size_t) i] *= lvA; aR[(size_t) i] *= lvA; bL[(size_t) i] *= lvB; bR[(size_t) i] *= lvB; xL[(size_t) i] = aL[(size_t) i] * sendA + bL[(size_t) i] * sendB + vsL[(size_t) i]; xR[(size_t) i] = aR[(size_t) i] * sendA + bR[(size_t) i] * sendB + vsR[(size_t) i]; }
         runChain (6, xL.data(), xR.data(), n);
         masterGain.tgt = dbToGain (prm[P_MASTER_VOL]);
         for (int i = 0; i < n; ++i)
@@ -186,13 +191,15 @@ public:
 
 private:
     // ---- oversampling: decimação FIR (Kaiser) linear-fase ----
-    static constexpr int kTaps[2] = { 47, 95 }, kTapsMax = 95;
+    static constexpr int kTaps[2] = { 191, 383 }, kTapsMax = 383;   // Kaiser ~90 dB: a banda de paragem começa em Nyquist do anfitrião (auditoria C-05)
     static double bessel0 (double x) { double s = 1, t = 1; for (int k = 1; k < 30; ++k) { t *= (x / (2.0 * k)) * (x / (2.0 * k)); s += t; } return s; }
     void buildDecimator()
     {
         if (factor == 1) { osL.clear(); osR.clear(); return; }
         taps = kTaps[factor == 4 ? 1 : 0]; hfir.assign ((size_t) taps, 0.0f);
-        const double fcN = 0.44 / factor, beta = 9.0, mid = (taps - 1) * 0.5; double sum = 0;
+        const double beta = 9.0, mid = (taps - 1) * 0.5; double sum = 0;
+        const double dF = (82.0 / (2.285 * (double) (taps - 1))) / (2.0 * 3.14159265358979323846);   // largura de transição (fração da taxa sobre-amostrada)
+        const double fcN = 0.5 / factor - 0.5 * dF;
         std::vector<double> h ((size_t) taps);
         for (int i = 0; i < taps; ++i)
         {
@@ -228,7 +235,10 @@ private:
         float stepBeat = 0, stepSm = 0, drawPh = 0, menvT = 0, menvRelT = 0, menvRelLevel = 0, menvLast = 0; bool menvRel = false;
         VoiceFilter f1, f2;
         float ph[2][kMaxUni] = {}, ph2[2][kMaxUni] = {}, pm[2][kMaxUni] = {};
+        float syncD[2][kMaxUni] = {}, fprev[2][kMaxUni] = {};   // salto da sync (polyBLEP) e amostra anterior da dobra (ADAA)
+        bool startDone[2] = { false, false };                  // ponto de arranque do sample já aplicado (MD_START)
         double sp[2][kMaxUni] = {};
+        float ksLp[2] = {}; int ksW[2] = {};                    // motor Corda: filtro de perdas e posição de escrita
         const Zone* zone[2] = { nullptr, nullptr };
         const SampleData* sd[2] = { nullptr, nullptr };
         const Instrument* instr[2] = { nullptr, nullptr };
@@ -242,12 +252,15 @@ private:
     UserWavetable userWt;
     const float* prm = nullptr; const Wavetables* wt = nullptr; const Library* lib = nullptr;
     Voice voices[kMaxVoices];
+    std::vector<float> ksBuf;                                // kMaxVoices*2 linhas de atraso (Karplus-Strong)
+    int ksSize = 0;
+    float* ksLine (int vi, int E) { return ksBuf.data() + ((size_t) vi * 2 + (size_t) E) * (size_t) ksSize; }
     std::vector<Held> stack; uint64_t ageCounter = 0; bool sustain = false; int lastNote = -1;
     float modWheel = 0, aftertouch = 0, pitchBend = 0;
     float exPb[128] = {}, exPress[128] = {}, exSlide[128] = {};      // expressão por nota (MPE / aftertouch polifónico)
-    std::vector<float> busL, busR, aL, aR, bL, bR, xL, xR;
+    std::vector<float> busL, busR, vsL, vsR, aL, aR, bL, bR, xL, xR; float* vsOutL = nullptr; float* vsOutR = nullptr;
     FxUnit fx[kNumFxSlots]; Limiter lim; Smoother masterGain; float peakL = 0, peakR = 0;
-    float globalDst[MD_COUNT] = {};
+    float globalDst[MD_COUNT] = {}; float sendAcc[3] = {}, sendW = 0.0f;
     int rrCounter[2] = { 0, 0 }; Rng rngGlobal;
 
     // ---- gestão de vozes ------------------------------------------------------------------
@@ -302,9 +315,9 @@ private:
             const float rp = rngGlobal.uni();
             v.ph[E][u] = retrig ? pe[P_A_PHASE] + (uni > 1 ? 0.011f * (float) u : 0.0f) : rp;
             v.ph[E][u] -= std::floor (v.ph[E][u]);
-            v.ph2[E][u] = 0; v.pm[E][u] = 0; v.sp[E][u] = 0;
+            v.ph2[E][u] = 0; v.pm[E][u] = 0; v.sp[E][u] = 0; v.syncD[E][u] = 0; v.fprev[E][u] = 1.0e9f;
         }
-        v.zone[E] = nullptr; v.sd[E] = nullptr; v.instr[E] = nullptr;
+        v.zone[E] = nullptr; v.sd[E] = nullptr; v.instr[E] = nullptr; v.startDone[E] = false;
         if (pe[P_A_ON] < 0.5f || (int) pe[P_A_TYPE] != 2 || ! lib || lib->inst.empty()) return;
         const int ii = std::max (0, std::min ((int) lib->inst.size() - 1, (int) pe[P_A_SMP]));
         const Instrument& I = lib->inst[(size_t) ii];
@@ -438,8 +451,9 @@ private:
             dst[dI] += amt * src[std::min (sI, (int) MS_COUNT - 1)] * dstScale (dI);
         }
         // globais (só fontes não-voz; calculado a partir da 1.ª voz ativa é suficiente)
-        for (int d = 0; d < MD_COUNT; ++d) globalDst[d] = 0;
-        globalDst[MD_SENDA] = dst[MD_SENDA]; globalDst[MD_SENDB] = dst[MD_SENDB]; globalDst[MD_AUXRET] = dst[MD_AUXRET];
+        // envios/retorno aux: média das vozes ponderada pelo seu ganho (independente da ordem das vozes; auditoria C-02).
+        // Com fontes globais (macro, mod wheel) todas as vozes valem o mesmo e o resultado é igual ao anterior.
+        const float sndNow[3] = { dst[MD_SENDA], dst[MD_SENDB], dst[MD_AUXRET] };
 
         // ---------- altura ----------
         const float gl = prm[P_GLIDE];
@@ -501,13 +515,17 @@ private:
         const float g0 = v.prevGain, g1 = target;
         v.prevGain = target;
         const float fadeStep = 1.0f / 64.0f;
+        const float vsend = std::min (1.0f, std::max (0.0f, sndNow[0]) + std::max (0.0f, sndNow[1]));
         for (int i = 0; i < m; ++i)
         {
             const float e = v.amp.tick();
             const float g = (g0 + (g1 - g0) * ((float) (i + 1) / (float) m)) * e;
             v.fade = std::min (1.0f, v.fade + fadeStep);
-            outL[i] += outFL[i] * g * gPanL * v.fade; outR[i] += outFR[i] * g * gPanR * v.fade;
+            const float yL = outFL[i] * g * gPanL * v.fade, yR = outFR[i] * g * gPanR * v.fade;
+            outL[i] += yL; outR[i] += yR;
+            if (vsend > 0.0f) { vsOutL[i] += yL * vsend; vsOutR[i] += yR * vsend; }     // envio por voz (mod SEND A/B), antes dos inserts
         }
+        { const float w = std::max (target, 1.0e-6f) * v.amp.getLevel(); for (int k = 0; k < 3; ++k) sendAcc[k] += sndNow[k] * w; sendW += w; }
         if (! v.amp.active() || (v.amp.getStage() == Adsr::Sustain && v.amp.getLevel() < 1.0e-4f)) { v.active = false; v.stolen = false; v.gate = false; }
     }
 
@@ -525,8 +543,9 @@ private:
     {
         const float* pe = prm + (E ? (P_B_ON - P_A_ON) : 0);
         const int type = (int) pe[P_A_TYPE];
-        const int uni = std::max (1, std::min (kMaxUni, (int) pe[P_A_UNI]));
+        const int uni = type == 3 ? 1 : std::max (1, std::min (kMaxUni, (int) pe[P_A_UNI]));
         const bool track = pe[P_A_TRACK] > 0.5f;
+        { const int klo = (int) prm[E ? P_B_KEYLO : P_A_KEYLO], khi = (int) prm[E ? P_B_KEYHI : P_A_KEYHI]; if (v.note < klo || v.note > khi) return; }   // split / layer
         const float levDb = pe[P_A_LEVEL]; if (levDb <= -59.9f) return;
         const float lvMod = clampf (1.0f + dst[E ? MD_LEVEL_B : MD_LEVEL_A], 0.0f, 2.0f);
         const float gain = dbToGain (levDb) * lvMod * blendGain * (uni > 1 ? 1.0f / std::sqrt ((float) uni) : 1.0f);
@@ -547,14 +566,22 @@ private:
             gL[u] *= gain; gR[u] *= gain;
         }
         float tmp[kSub];
+        if (type == 3) { renderString (v, E, m, pe, freq, gL[0], gR[0], oL, oR); return; }
         if (type == 2)
         {
             renderSample (v, E, m, pe, note, ratio, gL, gR, uni, oL, oR, dst);
             return;
         }
-        const int mip = Wavetables::mipForFrequency (freq * maxRatio, sr);
-        const float fmAmt = clampf (pe[P_A_FMAMT] + dst[E ? MD_FM_B : MD_FM_A], 0.0f, 1.0f), fold = clampf (pe[P_A_FOLD] + dst[E ? MD_FOLD_B : MD_FOLD_A], 0.0f, 1.0f);
+        const float syncMul = (type == 0 && pe[P_A_SYNC] > 0.01f) ? std::exp2 (pe[P_A_SYNC] / 12.0f) : 1.0f;   // o escravo da sync corre mais depressa: a tabela tem de ser band-limited para ele (auditoria C-03)
+        const int mip = Wavetables::mipForFrequency (freq * maxRatio * syncMul, factor > 1 ? (float) hostSr : sr);   // com oversampling, a onda-base fica limitada à Nyquist do anfitrião (auditoria C-05)
+        float fmAmt = clampf (pe[P_A_FMAMT] + dst[E ? MD_FM_B : MD_FM_A], 0.0f, 1.0f); const float fold = clampf (pe[P_A_FOLD] + dst[E ? MD_FOLD_B : MD_FOLD_A], 0.0f, 1.0f);
         const float fmRatio = kFmRatios[std::min (7, std::max (0, (int) pe[P_A_FMRAT]))];
+        if (fmAmt > 0.001f)
+        {   // índice de FM limitado para que a banda lateral mais alta fique abaixo de ~0,35 da taxa do motor (auditoria C-04)
+            const float beta = 6.2831853f * fmAmt, fmHz = std::max (1.0f, freq * maxRatio * fmRatio);
+            const float allowed = (0.35f * sr - freq * maxRatio) / fmHz - 1.0f;
+            if (beta > allowed) fmAmt *= std::max(0.0f, allowed) / beta;
+        }
         const float* sineT = wt->basic (0, 0);
         if (type == 0)
         {
@@ -571,10 +598,14 @@ private:
                 {
                     float p = sync > 0.01f ? ph2 : ph;
                     if (fmAmt > 0.001f) { p += fmAmt * Wavetables::read (sineT, pm); p -= std::floor (p); }
-                    float y;
-                    if (w == 3) { float p2 = p + pw; p2 -= std::floor (p2); y = (Wavetables::read (tab, p) - Wavetables::read (tab, p2)) * 0.5f; }
-                    else y = Wavetables::read (tab, p);
-                    if (fold > 0.001f) y = foldFn (y, fold);
+                    auto shape = [&] (float q) { if (w == 3) { float q2 = q + pw; q2 -= std::floor (q2); return (Wavetables::read (tab, q) - Wavetables::read (tab, q2)) * 0.5f; } return Wavetables::read (tab, q); };
+                    float y = shape (p);
+                    if (sync > 0.01f)
+                    {   // polyBLEP no salto do reinício de fase da sync (auditoria C-03)
+                        if (ph > 1.0f - dt) { float tail = ph2 + dt2 * (1.0f - ph) / dt; tail -= std::floor (tail); v.syncD[E][u] = shape (0.0f) - shape (tail); y += 0.5f * v.syncD[E][u] * polyBlep (ph, dt); }
+                        else if (ph < dt) y += 0.5f * v.syncD[E][u] * polyBlep (ph, dt);
+                    }
+                    if (fold > 0.001f) y = foldAdaa (y, fold, v.fprev[E][u]);
                     tmp[i] = y;
                     ph += dt; if (ph >= 1.0f) { ph -= 1.0f; if (sync > 0.01f) ph2 = ph * (dt2 / dt); }
                     if (sync > 0.01f) { ph2 += dt2; if (ph2 >= 1.0f) ph2 -= std::floor (ph2); }
@@ -602,7 +633,7 @@ private:
                 if (warp > 0.001f) { p *= 1.0f + 3.0f * warp; p -= std::floor (p); }
                 else if (warp < -0.001f) p = p + warp * p * (1.0f - p);
                 float y = Wavetables::read (c0, p); y += (Wavetables::read (c1, p) - y) * fr;
-                if (fold > 0.001f) y = foldFn (y, fold);
+                if (fold > 0.001f) y = foldAdaa (y, fold, v.fprev[E][u]);
                 tmp[i] = y;
                 ph += dt; if (ph >= 1.0f) ph -= 1.0f;
                 pm += dtm; pm -= std::floor (pm);
@@ -611,7 +642,55 @@ private:
             for (int i = 0; i < m; ++i) { oL[i] += tmp[i] * gL[u]; oR[i] += tmp[i] * gR[u]; }
         }
     }
+
+    // ---- motor Corda: Karplus-Strong estendido (linha de atraso + perdas passa-baixo), excitado no início da nota ----
+    void renderString (Voice& v, int E, int m, const float* pe, float freq, float gL, float gR, float* oL, float* oR)
+    {
+        (void) pe;
+        const int vi = (int) (&v - voices);
+        float* buf = ksLine (vi, E);
+        const float damp = prm[E ? P_B_KS_DAMP : P_A_KS_DAMP], decay = prm[E ? P_B_KS_DECAY : P_A_KS_DECAY], pick = prm[E ? P_B_KS_PICK : P_A_KS_PICK];
+        const float a = clampf (1.0f - 0.92f * damp, 0.05f, 1.0f);                       // coeficiente do passa-baixo (1 = sem perdas de agudos)
+        const float gd = (1.0f - a) / a;                                                 // atraso de grupo do passa-baixo a baixa frequência
+        const float D = clampf (sr / std::max (20.0f, freq) - gd, 4.0f, (float) ksSize - 4.0f);
+        const float t60 = 0.15f * std::pow (80.0f, decay);                               // 0,15 s … 12 s
+        const float g = std::pow (10.0f, -3.0f * (D / sr) / t60);                        // ganho por volta para atingir -60 dB em t60
+        if (! v.startDone[E])
+        {
+            v.startDone[E] = true; v.ksLp[E] = 0;
+            std::fill (buf, buf + ksSize, 0.0f);
+            const int N = std::max (4, (int) std::lround (D));
+            Rng ex; ex.seed (0x9E3779B9u ^ ((uint32_t) v.note * 2654435761u) ^ ((uint32_t) E * 40503u));       // ruído determinístico por nota: calibração e QA reprodutíveis
+            for (int i = 0; i < N; ++i) buf[i] = ex.bi();
+            const int pp = std::max (1, (int) (pick * 0.5f * (float) N));               // posição da palheta: entalhes em pente na excitação
+            if (pick > 0.02f) for (int i = N - 1; i >= pp; --i) buf[i] -= buf[i - pp] * pick;
+            float mean = 0; for (int i = 0; i < N; ++i) mean += buf[i]; mean /= (float) N;
+            for (int i = 0; i < N; ++i) buf[i] -= mean;                                  // sem DC
+            v.ksW[E] = N;                                                                // a escrita começa logo a seguir à excitação
+        }
+        int w = v.ksW[E]; float lp = v.ksLp[E];
+        for (int i = 0; i < m; ++i)
+        {
+            float rp = (float) w - D; if (rp < 0) rp += (float) ksSize;
+            int i0 = (int) rp; if (i0 >= ksSize) i0 = ksSize - 1; const int i1 = i0 + 1 >= ksSize ? 0 : i0 + 1; const float fr = rp - (float) i0;
+            const float y = buf[i0] + (buf[i1] - buf[i0]) * fr;
+            lp += a * (y - lp); lp = flushDenorm (lp);
+            buf[w] = lp * g;
+            if (++w >= ksSize) w = 0;
+            oL[i] += y * gL * 1.6f; oR[i] += y * gR * 1.6f;
+        }
+        v.ksW[E] = w; v.ksLp[E] = lp;
+    }
     static constexpr float kFmRatios[8] = { 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 8.0f };
+    // dobra com ADAA de 1.ª ordem (antiderivada analítica de sin): reduz o aliasing da dobra sem oversampling (auditoria C-04)
+    static float foldAdaa (float x, float amt, float& xp)
+    {
+        const float K = (1.0f + amt * 5.0f) * 1.5707963f, norm = 1.0f / (1.0f + 0.15f * amt);
+        if (xp > 1.0e8f) xp = x;
+        const float dx = x - xp;
+        const float y = std::fabs (dx) < 1.0e-4f ? std::sin (K * 0.5f * (x + xp)) : (std::cos (K * xp) - std::cos (K * x)) / (K * dx);
+        xp = x; return y * norm;
+    }
     static float foldFn (float x, float amt) { return std::sin (x * (1.0f + amt * 5.0f) * 1.5707963f * 1.0f) * (1.0f / (1.0f + 0.15f * amt)); }
 
     static float readHermite (const std::vector<float>& d, double pos)
@@ -658,7 +737,13 @@ private:
         const int len = sd->frames(); if (len < 4) return;
         const float baseStep = std::exp2 ((note - (float) z->root) / 12.0f) * (sd->sampleRate / sr);
         const bool loop = pe[P_A_LOOP] > 0.5f && z->loopStart >= 0 && z->loopEnd > z->loopStart + 8; const bool rev = pe[P_A_REV] > 0.5f;
-        const float zg = z->gain * 1.0f; (void) dst;
+        const float zg = z->gain * 1.0f;
+        if (! v.startDone[E])
+        {   // MD_START_A/B: o ponto de arranque modulado é lido uma vez, no primeiro bloco da nota (auditoria C-01)
+            v.startDone[E] = true;
+            const float st = clampf (pe[P_A_START] + dst[E ? MD_START_B : MD_START_A], 0.0f, 0.98f);
+            for (int u = 0; u < kMaxUni; ++u) v.sp[E][u] = rev ? (double) (len - 3) * (1.0 - st) : (double) len * st;
+        }
         for (int u = 0; u < uni; ++u)
         {
             double pos = v.sp[E][u]; const double step = (double) (baseStep * ratio[u]) * (rev ? -1.0 : 1.0);
