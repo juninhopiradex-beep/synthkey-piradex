@@ -8,7 +8,7 @@ endif()
 # Windows: runtime do Visual C++ embutido (não precisa do "VC++ Redistributable")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(SYNTHKEY VERSION 1.5.1 LANGUAGES C CXX)
+project(SYNTHKEY VERSION 1.6.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -64,6 +64,11 @@ target_sources(SynthKey PRIVATE
     Source/PackHub.cpp)
 target_include_directories(SynthKey PRIVATE Source)
 
+# PCC (Plugin Control Central): chaves de licença validadas online, mesma infraestrutura de todos os plugins Piradex
+set(PIRADEX_PCC_URL "https://ejjeittwyjttmevhajxo.supabase.co" CACHE STRING "URL do projeto Supabase do PCC")
+set(PIRADEX_PCC_PUBKEY "064c37512051906b9c8f1a9dfc962e9a1cd4c9f5b0f44ce66a12842b8e70a868" CACHE STRING "Chave pública Ed25519 do PCC (64 hex)")
+target_compile_definitions(SynthKey PUBLIC PIRADEX_PCC_URL="${PIRADEX_PCC_URL}" PIRADEX_PCC_PUBKEY="${PIRADEX_PCC_PUBKEY}" PIRADEX_PCC_VERSION="${PROJECT_VERSION}")
+
 target_compile_definitions(SynthKey PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -107,6 +112,6 @@ if(SK_BUILD_SMOKE)
     juce_add_console_app(SynthKeySmoke PRODUCT_NAME "synthkey_smoke")
     target_sources(SynthKeySmoke PRIVATE tests/smoke.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Access.cpp Source/PackHub.cpp)
     target_include_directories(SynthKeySmoke PRIVATE Source)
-    target_compile_definitions(SynthKeySmoke PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_STANDALONE_APPLICATION=1 SK_VERSION_STRING="${PROJECT_VERSION}")
+    target_compile_definitions(SynthKeySmoke PRIVATE PIRADEX_PCC_URL="${PIRADEX_PCC_URL}" PIRADEX_PCC_PUBKEY="${PIRADEX_PCC_PUBKEY}" PIRADEX_PCC_VERSION="${PROJECT_VERSION}" JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_STANDALONE_APPLICATION=1 SK_VERSION_STRING="${PROJECT_VERSION}")
     target_link_libraries(SynthKeySmoke PRIVATE SynthKeyAssets juce::juce_audio_utils juce::juce_audio_processors juce::juce_cryptography juce::juce_dsp juce::juce_recommended_config_flags)
 endif()

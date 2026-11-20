@@ -102,13 +102,16 @@ private:
         juce::Thread::launch ([self, text, rem]
         {
             const auto m = AccessManager::matchPassword (text);          // PBKDF2: fora da thread de mensagens
-            juce::MessageManager::callAsync ([self, m, rem]
+            piradex::pcc::Check online;                                  // chave de licença: pergunta ao PCC
+            if (m.index < 0 && ! m.expired) online = AccessManager::checkOnline (text);
+            juce::MessageManager::callAsync ([self, m, rem, online]
             {
                 if (self == nullptr) return;
-                const auto r = AccessManager::get().applyLogin (m, rem);
+                const auto r = online.outcome != piradex::pcc::Outcome::Disabled ? AccessManager::get().applyOnline (online, rem)
+                                                                                 : AccessManager::get().applyLogin (m, rem);
                 self->busy = false; self->enter.setEnabled (true);
                 if (r == AccessManager::LoginResult::Ok) { self->pw.clear(); self->message.clear(); if (self->onUnlocked) self->onUnlocked(); }
-                else { self->isError = true; self->message = r == AccessManager::LoginResult::Expired ? TX ("Esta senha beta j\xC3\xA1 expirou.") : TX ("Senha incorreta."); self->pw.selectAll(); self->pw.grabKeyboardFocus(); }
+                else { self->isError = true; self->message = r == AccessManager::LoginResult::Online ? AccessManager::get().onlineText() : r == AccessManager::LoginResult::Expired ? TX ("Esta senha beta j\xC3\xA1 expirou.") : TX ("Senha incorreta."); self->pw.selectAll(); self->pw.grabKeyboardFocus(); }
                 self->repaint();
             });
         });

@@ -27,6 +27,7 @@ AccessManager::AccessManager()
     if (id.isNotEmpty() && tok.isNotEmpty())
         for (int i = 0; i < pwtab::kPasswordCount; ++i)
             if (id == pwtab::kPasswords[i].id && tok == tokenFor (i) && ! lic::pwExpired (pwtab::kPasswords[i], today())) { setRole (i); refreshAdmin(); break; }
+    if (! unlocked.load() && pcc.restore (*props)) setOnline();       // chave de licença (PCC) lembrada neste computador
 }
 
 int AccessManager::today() const
@@ -50,7 +51,40 @@ juce::String AccessManager::tokenFor (int index) const
 
 void AccessManager::setRole (int index)
 {
-    currentIndex = index; roleValue.store ((int) pwtab::kPasswords[index].role); unlocked.store (true);
+    currentIndex = index; roleValue.store ((int) pwtab::kPasswords[index].role); online.store (false); unlocked.store (true);
+}
+
+void AccessManager::setOnline()
+{
+    const auto r = pcc.role();
+    currentIndex = -1; online.store (true);
+    roleValue.store ((int) (r == "master" ? sk::lic::Role::Master : r == "beta" ? sk::lic::Role::Beta : sk::lic::Role::None));
+    unlocked.store (true);
+}
+
+AccessManager::LoginResult AccessManager::applyOnline (const piradex::pcc::Check& c, bool remember)
+{
+    if (c.outcome != piradex::pcc::Outcome::Ok) { lastOnline = piradex::pcc::uiText (c, false); return LoginResult::Online; }
+    const juce::ScopedLock sl (lock);
+    pcc.commit (c, remember, *props);
+    props->removeValue ("loginId"); props->removeValue ("loginToken"); props->saveIfNeeded();
+    setOnline();
+    return LoginResult::Ok;
+}
+
+bool AccessManager::claimOnlineRecheck()
+{
+    const auto now = piradex::pcc::unixNow();
+    if (! online.load() || ! piradex::pcc::enabled() || now - lastRecheckTry.load() < 3600) return false;   // sem rede: tenta de hora a hora
+    if (now - props->getValue ("pccCheck").getLargeIntValue() < (juce::int64) pq::pcc::kRecheckHours * 3600) return false;
+    lastRecheckTry.store (now);
+    return true;
+}
+
+void AccessManager::revalidateOnline()
+{
+    if (pcc.revalidate (*props) == piradex::pcc::Session::Recheck::Revoked)
+        juce::MessageManager::callAsync ([] { AccessManager::get().logout(); });
 }
 
 AccessManager::Match AccessManager::matchPassword (const juce::String& password)
@@ -77,17 +111,19 @@ AccessManager::LoginResult AccessManager::applyLogin (Match m, bool remember)
 void AccessManager::logout()
 {
     const juce::ScopedLock sl (lock);
-    unlocked.store (false); roleValue.store (0); currentIndex = -1; adminOk.store (false);
+    unlocked.store (false); online.store (false); pcc.clear (*props); roleValue.store (0); currentIndex = -1; adminOk.store (false);
     props->removeValue ("loginId"); props->removeValue ("loginToken"); props->saveIfNeeded();
 }
 
 void AccessManager::checkExpiry()
 {
+    if (unlocked.load() && online.load()) { if (! pcc.stillGood()) logout(); return; }   // licença online expirada ou 14 dias sem validar
     if (unlocked.load() && currentIndex >= 0 && lic::pwExpired (pwtab::kPasswords[currentIndex], today())) logout();
 }
 
 int AccessManager::betaDaysLeft() const
 {
+    if (online.load()) return (unlocked.load() && role() == sk::lic::Role::Beta) ? pcc.daysLeft() : -1;
     if (! unlocked.load() || role() != lic::Role::Beta || currentIndex < 0) return -1;
     const auto& e = pwtab::kPasswords[currentIndex];
     return std::max (0, keys::daysSince2026 (e.expYear, e.expMonth, e.expDay) - today() + 1);
@@ -95,6 +131,12 @@ int AccessManager::betaDaysLeft() const
 
 juce::String AccessManager::roleText() const
 {
+    if (unlocked.load() && online.load())
+    {
+        if (role() == sk::lic::Role::Master) return "MESTRE";
+        int y = 0, mo = 0, d = 0; if (! pq::pcc::parseDate (pcc.expires(), y, mo, d)) return "LICENCIADO";
+        return juce::String (juce::CharPointer_UTF8 ("LICEN\xC3\x87""A \xC2\xB7 at\xC3\xA9 ")) + juce::String (d).paddedLeft ('0', 2) + "/" + juce::String (mo).paddedLeft ('0', 2) + "/" + juce::String (y);
+    }
     if (! unlocked.load()) return {};
     if (role() == lic::Role::Master) return juce::CharPointer_UTF8 ("MESTRE");
     const auto& e = pwtab::kPasswords[std::max (0, currentIndex)];

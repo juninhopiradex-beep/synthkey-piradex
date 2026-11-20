@@ -11,6 +11,38 @@
 int main()
 {
     juce::ScopedJuceInitialiser_GUI init;
+
+    std::printf ("Licença online (PCC)\n");
+    int pccFails = 0;
+    {
+        auto check = [&] (bool c, const char* w) { std::printf ("%s  %s\n", c ? "ok     " : "FALHOU ", w); pccFails += c ? 0 : 1; };
+        namespace pc = piradex::pcc;
+        check (pc::enabled(), "PCC ligado no build (URL + chave pública)");
+        check (pc::looksLikeKey ("SYN-AB12-CD34-EF56") && pc::looksLikeKey (" syn-ab12-cd34-ef56 "), "formato de chave reconhecido (espaços e minúsculas aceites)");
+        check (! pc::looksLikeKey ("#Tecnico01") && ! pc::looksLikeKey ("SYN-AB12-CD34"), "senhas normais não vão ao PCC");
+        check (pq::pcc::keyHashOf (pc::normaliseKey ("syn-ab12-cd34-ef56").toStdString(), "SYNTHKEY") == "6a85f07a0b59d867212eee50075f36facf3b50d327ed30f0ffb73e918080f512", "hash da chave igual ao que o servidor calcula");
+        {
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("pcc_test.settings");
+            f.deleteFile();
+            juce::PropertiesFile::Options o; o.storageFormat = juce::PropertiesFile::storeAsXML;
+            juce::PropertiesFile pf (f, o);
+            pf.setValue ("pccHash", juce::String::repeatedString ("ab", 32)); pf.setValue ("pccValid", "1"); pf.setValue ("pccRole", "master");
+            pf.setValue ("pccNonce", "00112233445566778899"); pf.setValue ("pccTs", juce::String ((juce::int64) pc::unixNow()));
+            pf.setValue ("pccSig", juce::String::repeatedString ("11", 64));
+            pc::Session s ("SYNTHKEY", "teste");
+            check (! s.restore (pf) && ! s.active(), "licença guardada com assinatura falsa é recusada");
+            f.deleteFile();
+        }
+        pc::Check c; c.outcome = pc::Outcome::Invalid; c.message = juce::String (juce::CharPointer_UTF8 ("Licen\xc3\xa7" "a expirada em 2026-01-01."));
+        check (pc::uiText (c, false).contains ("expirada") && pc::uiText (c, true).contains ("expired"), "mensagens do PCC em PT e EN");
+        c.message = juce::String (juce::CharPointer_UTF8 ("Licen\xc3\xa7" "a inv\xc3\xa1lida."));
+        check (pc::uiText (c, true) == "Incorrect password or licence.", "chave desconhecida: mensagem normal");
+        AccessManager::get().logout();
+        check (AccessManager::get().applyOnline (c, false) == AccessManager::LoginResult::Online && ! AccessManager::get().onlineLicence(), "chave recusada pelo PCC não desbloqueia o plugin");
+        c.outcome = pc::Outcome::Unreachable;
+        check (pc::uiText (c, false).contains ("internet"), "sem rede: pede para verificar a internet");
+        
+    }
     auto* pw = std::getenv ("SK_TEST_PW");
     if (pw)
     {
@@ -296,5 +328,5 @@ int main()
         hub.removeUserSample (idT); hub.removeUserSample (idP); tmp.deleteRecursively();
     }
     proc.releaseResources();
-    return (bad == 0 && grooveFail == 0 && importFail == 0) ? 0 : 1;
+    return (bad == 0 && grooveFail == 0 && importFail == 0 && pccFails == 0) ? 0 : 1;
 }

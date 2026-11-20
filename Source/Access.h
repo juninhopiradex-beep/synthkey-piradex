@@ -7,6 +7,7 @@
 #include <atomic>
 #include <vector>
 #include "Core/Licensing.h"
+#include "pcc/PccSession.h"
 
 class AccessManager
 {
@@ -21,9 +22,17 @@ public:
     int  betaDaysLeft() const;                           // -1 se não for beta
     struct Match { int index = -1; bool expired = false; };
     static Match matchPassword (const juce::String& password);        // lento (PBKDF2): chamar fora da thread de mensagens
-    enum class LoginResult { Ok, Wrong, Expired };
+    enum class LoginResult { Ok, Wrong, Expired, Online };    // Online: o PCC recusou ou não respondeu (texto em onlineText())
     LoginResult applyLogin (Match m, bool remember);
     void logout();
+
+    // ---- chave de licença online (PCC): checkOnline numa thread de fundo, applyOnline na thread de mensagens
+    static piradex::pcc::Check checkOnline (const juce::String& password) { return get().pcc.check (password); }
+    LoginResult applyOnline (const piradex::pcc::Check& c, bool remember);
+    juce::String onlineText() const { return lastOnline; }
+    bool claimOnlineRecheck();                                       // barato (mensagens): true = lançar revalidateOnline()
+    void revalidateOnline();                                         // fundo, no máximo 1x/dia; revogada => logout
+    bool onlineLicence() const { return online.load(); }
     void checkExpiry();                                   // chamar periodicamente (ex. 1x/min)
 
     // ---- packs -----------------------------------------------------------
@@ -50,6 +59,7 @@ public:
 private:
     AccessManager();
     void setRole (int index);
+    void setOnline();
     void saveActivations();
     void loadIssued() const;
     void saveIssued() const;
@@ -59,6 +69,10 @@ private:
     std::atomic<bool> unlocked { false }, adminOk { false }, simulate { false };
     std::atomic<int> roleValue { 0 };
     int currentIndex = -1;
+    piradex::pcc::Session pcc { "SYNTHKEY", PIRADEX_PCC_VERSION };
+    std::atomic<bool> online { false };
+    std::atomic<juce::int64> lastRecheckTry { 0 };
+    juce::String lastOnline;
     std::vector<sk::lic::Activation> acts;
     mutable std::vector<sk::lic::IssuedKey> issuedCache; mutable bool issuedLoaded = false; mutable uint32_t nextSerial = 1;
     mutable int lastSeenDay = 0;

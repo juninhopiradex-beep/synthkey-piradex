@@ -495,6 +495,8 @@ bool SynthKeyProcessor::redo()
 void SynthKeyProcessor::timerCallback()
 {
     AccessManager::get().checkExpiry(); updatePreviewState();
+    if (AccessManager::get().claimOnlineRecheck())                          // licença online: revalida no PCC 1x por dia
+        juce::Thread::launch ([] { AccessManager::get().revalidateOnline(); });
     if (engine && engine->latencySamples() != getLatencySamples()) setLatencySamples (engine->latencySamples());   // muda com a qualidade
 }
 

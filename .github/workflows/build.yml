@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSAO: "1.5.1"
+  VERSAO: "1.6.0"
 
 jobs:
   testes-e-packs:
@@ -240,4 +240,4 @@ jobs:
           echo "$FICHEIROS"
           gh release create "$TAG" $FICHEIROS -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "SYNTHKEY by Piradex $VERSAO" \
-            --notes "macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."
+            --notes "Novo na 1.6.0: chaves de licença validadas online (PCC); a master e as senhas beta continuam a funcionar como antes. macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."
