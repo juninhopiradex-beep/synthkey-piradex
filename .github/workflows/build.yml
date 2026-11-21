@@ -59,12 +59,18 @@ jobs:
 
   macos:
     needs: testes-e-packs
-    runs-on: macos-14
+    runs-on: macos-15  # o macos-14 deixou de existir no GitHub Actions
     env:
       ART: build/SynthKey_artefacts/Release
       SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
     steps:
       - uses: actions/checkout@v4
+      - name: Escolher um Xcode que ainda gera binarios para macOS 10.13 (o Xcode 26 sobe o minimo para 11.0)
+        run: |
+          ls -d /Applications/Xcode_*.app
+          X=$(ls -d /Applications/Xcode_16*.app /Applications/Xcode_15*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$X" ]; then echo "::error::Nenhum Xcode 15/16 disponivel: o plugin nao correria no macOS Catalina"; exit 1; fi
+          sudo xcode-select -s "$X"; xcodebuild -version
       - uses: actions/download-artifact@v4
         with: { name: packs, path: dist-packs }
 
