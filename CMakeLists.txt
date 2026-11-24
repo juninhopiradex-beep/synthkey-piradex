@@ -8,7 +8,7 @@ endif()
 # Windows: runtime do Visual C++ embutido (não precisa do "VC++ Redistributable")
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(SYNTHKEY VERSION 1.6.0 LANGUAGES C CXX)
+project(SYNTHKEY VERSION 1.7.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -26,9 +26,9 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Source/Secrets.h")
 endif()
 
 if(APPLE)
-    set(SK_FORMATS VST3 AU Standalone)
+    set(SK_FORMATS VST3 AU AAX Standalone)      # AAX: SDK incluido na JUCE 8; o Pro Tools normal exige assinatura PACE
 elseif(WIN32)
-    set(SK_FORMATS VST3 Standalone)
+    set(SK_FORMATS VST3 AAX Standalone)
 else()
     set(SK_FORMATS VST3 Standalone)   # Linux: só desenvolvimento/testes
 endif()
@@ -55,6 +55,7 @@ juce_add_plugin(SynthKey
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES Instrument Synth
     AU_MAIN_TYPE kAudioUnitType_MusicDevice
+    AAX_CATEGORY SWGenerators
     MICROPHONE_PERMISSION_ENABLED FALSE)
 
 target_sources(SynthKey PRIVATE
@@ -98,7 +99,7 @@ endif()
 # ---- testes e ferramentas do núcleo (C++ puro, sem JUCE) -----------------------------------
 option(SK_BUILD_TOOLS "Compilar testes e packgen" OFF)
 if(SK_BUILD_TOOLS)
-    foreach(t test_core test_packio test_presets test_soundgen)
+    foreach(t test_core test_packio test_presets test_soundgen test_rt)
         add_executable(${t} tests/${t}.cpp)
         target_include_directories(${t} PRIVATE Source)
     endforeach()

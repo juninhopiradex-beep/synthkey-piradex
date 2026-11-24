@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSAO: "1.6.0"
+  VERSAO: "1.7.0"
 
 jobs:
   testes-e-packs:
@@ -38,6 +38,8 @@ jobs:
           ./test_loops
           g++ -O2 -std=c++17 -ISource tests/test_a2m.cpp -o test_a2m
           ./test_a2m
+          g++ -O2 -std=c++17 -ISource tests/test_rt.cpp -o test_rt
+          ./test_rt
 
       - name: Injetar segredos (não vão para o repositório)
         run: |
@@ -63,6 +65,11 @@ jobs:
     env:
       ART: build/SynthKey_artefacts/Release
       SYNTHKEY_SECRETS_B64: ${{ secrets.SYNTHKEY_SECRETS_B64 }}
+      # Assinatura PACE do AAX (opcional): so corre quando estes segredos existirem
+      PACE_ACCOUNT: ${{ secrets.PACE_ACCOUNT }}
+      PACE_PASSWORD: ${{ secrets.PACE_PASSWORD }}
+      PACE_WCGUID: ${{ secrets.PACE_WCGUID }}
+      PACE_EDEN_URL: ${{ secrets.PACE_EDEN_URL }}
     steps:
       - uses: actions/checkout@v4
       - name: Escolher um Xcode que ainda gera binarios para macOS 10.13 (o Xcode 26 sobe o minimo para 11.0)
@@ -85,8 +92,8 @@ jobs:
           -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
 
-      - name: Compilar VST3 + AU + Standalone
-        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_AU SynthKey_Standalone -- -quiet
+      - name: Compilar VST3 + AU + AAX + Standalone
+        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_AU SynthKey_AAX SynthKey_Standalone -- -quiet
 
       - name: Verificar arquiteturas e versão mínima do macOS
         run: |
@@ -106,6 +113,7 @@ jobs:
           codesign --force --deep -s - "$ART/VST3/SYNTHKEY by Piradex.vst3"
           codesign --force --deep -s - "$ART/AU/SYNTHKEY by Piradex.component"
           codesign --force --deep -s - "$ART/Standalone/SYNTHKEY by Piradex.app"
+          codesign --force --deep -s - "$ART/AAX/SYNTHKEY by Piradex.aaxplugin"
 
       - name: Validar Audio Unit (auval, Apple Silicon e Intel/Rosetta)
         run: |
@@ -151,11 +159,35 @@ jobs:
           hdiutil create -volname "SYNTHKEY by Piradex" -srcfolder dmg -ov -format UDZO "SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg"
           ls -la *.pkg *.dmg
 
+      # AAX: o Pro Tools normal so carrega plugins assinados pela PACE (wraptool).
+      # Sem credenciais, sai um .zip "nao-assinado" (serve no Pro Tools Developer).
+      - name: Assinar AAX com PACE (so com credenciais nos segredos)
+        if: env.PACE_ACCOUNT != '' && env.PACE_EDEN_URL != ''
+        run: |
+          curl -sSL -o eden.dmg "$PACE_EDEN_URL"
+          hdiutil attach -nobrowse -mountpoint /Volumes/Eden eden.dmg
+          sudo installer -pkg /Volumes/Eden/*.pkg -target /
+          WRAP="/Applications/PACEAntiPiracy/Eden/Fusion/Current/bin/wraptool"
+          "$WRAP" sign --verbose --account "$PACE_ACCOUNT" --password "$PACE_PASSWORD" --wcguid "$PACE_WCGUID" \
+            --dsig1-compat off --in "$ART/AAX/SYNTHKEY by Piradex.aaxplugin" --out "$ART/AAX/SYNTHKEY by Piradex.aaxplugin"
+          "$WRAP" verify --verbose --in "$ART/AAX/SYNTHKEY by Piradex.aaxplugin"
+          touch aax-assinado
+
+      - name: Empacotar AAX
+        run: |
+          mkdir -p aax
+          cp -R "$ART/AAX/SYNTHKEY by Piradex.aaxplugin" aax/
+          cp installer/LEIA-ME-AAX.txt aax/
+          SUF=$([ -f aax-assinado ] && echo "assinado" || echo "nao-assinado")
+          ditto -c -k --sequesterRsrc aax "SYNTHKEY-by-Piradex-$VERSAO-macOS-AAX-$SUF.zip"
+          ls -la *.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: SYNTHKEY-macOS
           path: |
             SYNTHKEY-by-Piradex-*-macOS.dmg
+            SYNTHKEY-by-Piradex-*-macOS-AAX-*.zip
             pluginval-macOS.log
 
   windows:
@@ -178,8 +210,8 @@ jobs:
       - name: Configurar (x64, Visual Studio 2022)
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
 
-      - name: Compilar VST3 + Standalone
-        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_Standalone --parallel 4
+      - name: Compilar VST3 + AAX + Standalone
+        run: cmake --build build --config Release --target SynthKey_VST3 SynthKey_AAX SynthKey_Standalone --parallel 4
 
       - name: Verificar binário x64 e dependências
         shell: pwsh
@@ -214,6 +246,10 @@ jobs:
           Copy-Item "dist-packs/*.bfpack" zipstage/Packs
           Copy-Item installer/LEIA-ME-Windows.txt zipstage
           Compress-Archive -Path "zipstage/*" -DestinationPath "out-win/SYNTHKEY-by-Piradex-$env:VERSAO-Windows-Manual.zip"
+          New-Item -ItemType Directory -Force aaxstage | Out-Null
+          Copy-Item "$env:ART/AAX/SYNTHKEY by Piradex.aaxplugin" aaxstage -Recurse
+          Copy-Item installer/LEIA-ME-AAX.txt aaxstage
+          Compress-Archive -Path "aaxstage/*" -DestinationPath "out-win/SYNTHKEY-by-Piradex-$env:VERSAO-Windows-AAX-nao-assinado.zip"
           Get-ChildItem out-win
 
       - uses: actions/upload-artifact@v4
@@ -246,4 +282,4 @@ jobs:
           echo "$FICHEIROS"
           gh release create "$TAG" $FICHEIROS -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "SYNTHKEY by Piradex $VERSAO" \
-            --notes "Novo na 1.6.0: chaves de licença validadas online (PCC); a master e as senhas beta continuam a funcionar como antes. macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."
+            --notes "Novo na 1.7.0: formato AAX (Pro Tools; ver LEIA-ME-AAX.txt), arpejador e acordes sem alocacoes de memoria no audio (sem estalos com muitas notas), nova senha master. macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."

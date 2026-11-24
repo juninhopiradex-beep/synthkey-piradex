@@ -3,6 +3,7 @@
 //  escala (forçar notas), acordes e arpejador com padrões por estilo.
 // =============================================================================
 #pragma once
+#include <array>
 #include "ParamTable.h"
 #include "Dsp.h"
 #include <algorithm>
@@ -52,7 +53,14 @@ inline const ArpPattern kArpPatterns[8] = {
 class MidiFx
 {
 public:
-    void prepare (float sampleRate) { sr = sampleRate; reset(); }
+    // reserva tudo aqui: process() / noteOn() nunca alocam na thread de audio (desde que nao passem estes limites)
+    void prepare (float sampleRate)
+    {
+        sr = sampleRate;
+        inq.reserve (1024); held.reserve (256); sounding.reserve (1024); pending.reserve (4096); chordMap.reserve (256);
+        listA.reserve (256 * 8); listB.reserve (256 * 8);
+        reset();
+    }
     void reset()
     {
         held.clear(); sounding.clear(); pending.clear(); chordMap.clear();
@@ -100,7 +108,8 @@ public:
         }
         pending.erase (pending.begin(), pending.begin() + (long) k);
         absPos += n;
-        std::stable_sort (out.begin(), out.end(), [] (const NoteEvent& a, const NoteEvent& b) { return a.offset < b.offset; });
+        // ordenacao estavel por insercao (o std::stable_sort pode reservar memoria; aqui ha poucos eventos por bloco)
+        for (size_t i = 1; i < out.size(); ++i) { const NoteEvent e = out[i]; size_t j = i; while (j > 0 && out[j - 1].offset > e.offset) { out[j] = out[j - 1]; --j; } out[j] = e; }
     }
 
     // utilitários (também usados em testes)
@@ -147,8 +156,9 @@ private:
     std::vector<Held> held;
     std::vector<int> sounding;
     std::vector<Pend> pending;
-    struct ChordEntry { int root; std::vector<int> notes; };
+    struct ChordEntry { int root; int count = 0; std::array<int, 8> notes {}; };   // sem std::vector por nota (nao aloca)
     std::vector<ChordEntry> chordMap;
+    std::vector<Held> listA, listB;                                               // rascunho do arpejador (reservado)
     int physicalDown = 0; bool arpActive = false;
     int64_t lastStepIdx = -1, absPos = 0; double internalBeat = 0; int stepCounter = 0, noteCounter = 0, pingDir = 1, pingIdx = 0;
     Rng rng;
@@ -171,19 +181,32 @@ private:
         if (arpActive)
         {
             if (prm[P_ARP_LATCH] > 0.5f && physicalDown == 1) held.clear();
-            held.push_back ({ root, e.vel });
+            auto it = std::find_if (held.begin(), held.end(), [root] (const Held& h) { return h.note == root; });
+            if (it != held.end()) it->vel = e.vel;                 // a mesma nota outra vez: so atualiza (a lista nao cresce sem fim)
+            else if (held.size() < 128) held.push_back ({ root, e.vel });
             return;
         }
+        // a mesma tecla outra vez sem note-off: fecha o acorde anterior primeiro (sem notas presas nem listas a crescer)
+        for (auto it = chordMap.begin(); it != chordMap.end(); ++it)
+            if (it->root == e.note)
+            {
+                for (int ci = 0; ci < it->count; ++ci)
+                {
+                    const int nn = it->notes[(size_t) ci]; out.push_back ({ e.offset, false, nn, 0.0f });
+                    auto s2 = std::find (sounding.begin(), sounding.end(), nn); if (s2 != sounding.end()) sounding.erase (s2);
+                }
+                chordMap.erase (it); break;
+            }
         int ns[8]; const int cnt = chordNotes ((int) prm[P_CHORD_TYPE], root, (int) prm[P_SCALE_KEY], (int) prm[P_SCALE_TYPE], ns);
-        ChordEntry ce { e.note, {} };
-        for (int i = 0; i < cnt; ++i)
+        ChordEntry ce; ce.root = e.note;
+        for (int i = 0; i < cnt && i < 8; ++i)
         {
             const int nn = std::min (127, std::max (0, ns[i]));
-            ce.notes.push_back (nn);
+            ce.notes[(size_t) ce.count++] = nn;
             out.push_back ({ e.offset, true, nn, e.vel });
             sounding.push_back (nn);
         }
-        chordMap.push_back (std::move (ce));
+        chordMap.push_back (ce);
     }
     void handleOff (const NoteEvent& e, std::vector<NoteEvent>& out)
     {
@@ -199,8 +222,9 @@ private:
         for (auto it = chordMap.begin(); it != chordMap.end(); ++it)
             if (it->root == e.note)
             {
-                for (int nn : it->notes)
+                for (int ci = 0; ci < it->count; ++ci)
                 {
+                    const int nn = it->notes[(size_t) ci];
                     out.push_back ({ e.offset, false, nn, 0.0f });
                     auto s = std::find (sounding.begin(), sounding.end(), nn); if (s != sounding.end()) sounding.erase (s);
                 }
@@ -210,15 +234,15 @@ private:
     }
 
     // ---- arpejador ----------------------------------------------------------------------
-    void buildList (std::vector<Held>& list) const
+    // lista do arpejador em listA (usa listB como rascunho; ambos reservados em prepare)
+    void buildList()
     {
-        list = held;
+        listB.assign (held.begin(), held.end());
         const int mode = (int) prm[P_ARP_MODE];
-        if (mode != 5) std::sort (list.begin(), list.end(), [] (const Held& a, const Held& b) { return a.note < b.note; });
+        if (mode != 5) std::sort (listB.begin(), listB.end(), [] (const Held& a, const Held& b) { return a.note < b.note; });
         const int octs = std::max (1, (int) prm[P_ARP_OCT]);
-        std::vector<Held> all;
-        for (int o = 0; o < octs; ++o) for (auto h : list) { h.note += 12 * o; if (h.note <= 127) all.push_back (h); }
-        list = all;
+        listA.clear();
+        for (int o = 0; o < octs; ++o) for (auto h : listB) { h.note += 12 * o; if (h.note <= 127) listA.push_back (h); }
     }
     int pickIndex (int mode, int size)
     {
@@ -255,7 +279,7 @@ private:
         const ArpPattern& ap = kArpPatterns[pat];
         const int mode = (int) prm[P_ARP_MODE];
         const float gate = prm[P_ARP_GATE], swing = prm[P_ARP_SWING];
-        std::vector<Held> list; buildList (list);
+        buildList(); const auto& list = listA;
         if (list.empty()) return;
 
         for (;;)
@@ -286,12 +310,13 @@ private:
             }
             const int reps = (st.flags & AF_R3) ? 3 : ((st.flags & AF_R2) ? 2 : 1);
             const int64_t subLen = (int64_t) (stepLen / (double) reps);
-            std::vector<int> picks;
-            if (mode == 6) { for (size_t i = 0; i < list.size() && i < 4; ++i) picks.push_back ((int) i); }
-            else picks.push_back (pickIndex (mode, (int) list.size()));
+            int picks[4]; int np = 0;
+            if (mode == 6) { for (size_t i = 0; i < list.size() && i < 4; ++i) picks[np++] = (int) i; }
+            else picks[np++] = pickIndex (mode, (int) list.size());
             for (int r = 0; r < reps; ++r)
-                for (int pi : picks)
+                for (int q = 0; q < np; ++q)
                 {
+                    const int pi = picks[q];
                     const Held& h = list[(size_t) pi];
                     const int note = std::min (127, std::max (0, h.note + 12 * st.oct));
                     schedule (at + (int64_t) r * subLen, note, clampf (h.vel * st.vel, 0.05f, 1.0f), std::max<int64_t> (2, (int64_t) ((double) subLen * (double) gate * (double) st.gate)));

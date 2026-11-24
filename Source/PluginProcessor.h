@@ -148,7 +148,9 @@ private:
     // biblioteca: o objeto fica na thread de mensagens; a thread de áudio só vê um ponteiro
     mutable juce::CriticalSection libLock;
     std::shared_ptr<const sk::Library> combined;
-    std::vector<std::shared_ptr<const sk::Library>> retired;
+    std::atomic<const sk::Library*> combinedRaw { nullptr };   // copia sem lock para a thread de audio (o dono continua a ser "combined")
+    struct Retired { std::shared_ptr<const sk::Library> lib; juce::uint32 at = 0; };
+    std::vector<Retired> retired;               // so se libertam passados 10 s (a thread de audio pode ainda ter o ponteiro antigo)
     std::atomic<const sk::Library*> pendingLib { nullptr };
     std::atomic<const sk::Library*> engineLib { nullptr };
     std::atomic<int> smpIdx[2] = { { 0 }, { 0 } };

@@ -91,7 +91,7 @@ void SynthKeyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engineG->setQuality (raw[(size_t) P_QUALITY] ? (int) raw[(size_t) P_QUALITY]->load() : 0); engineG->prepare (sampleRate, engineMax);
     gTmpL.assign ((size_t) engineMax, 0.0f); gTmpR.assign ((size_t) engineMax, 0.0f); gEvs.reserve (1024);
     engineLib.store (nullptr);                               // força a re-ligação da biblioteca no próximo bloco
-    { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); }
+    { const juce::ScopedLock sl (libLock); combinedRaw.store (combined.get()); pendingLib.store (combined.get()); }
     setLatencySamples (engine->latencySamples());
     evs.reserve (512);
 }
@@ -111,7 +111,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     for (int i = 0; i < P_COUNT; ++i) prm[i] = raw[(size_t) i] ? raw[(size_t) i]->load() : kParams[i].def;
     prm[P_A_SMP] = (float) smpIdx[0].load(); prm[P_B_SMP] = (float) smpIdx[1].load();
 
-    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); engineG->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); { const juce::ScopedLock sl (libLock); pendingLib.store (combined.get()); } } }
+    { const int q = (int) prm[P_QUALITY]; if (q != engine->quality()) { engine->setQuality (q); engineG->setQuality (q); midiFx.allNotesOff(); engineLib.store (nullptr); pendingLib.store (combinedRaw.load()); } }   // sem lock na thread de audio
     if (auto* pl = pendingLib.exchange (nullptr)) { engine->setLibrary (pl); engineG->setLibrary (pl); engineLib.store (pl); midiFx.allNotesOff(); }
 
     double bpm = 120.0, ppq = 0.0; bool playing = false;
@@ -188,7 +188,7 @@ void SynthKeyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         float* gp = prmG[gActive.load()]; gp[P_A_SMP] = (float) gSmp[0].load(); gp[P_B_SMP] = (float) gSmp[1].load();
         engineG->setParams (gp); engineG->setBpm (bpm);
-        std::stable_sort (gEvs.begin(), gEvs.end(), [] (const sk::GMidiEvent& a, const sk::GMidiEvent& b) { return a.offset < b.offset; });
+        for (size_t i = 1; i < gEvs.size(); ++i) { const auto e = gEvs[i]; size_t j = i; while (j > 0 && gEvs[j - 1].offset > e.offset) { gEvs[j] = gEvs[j - 1]; --j; } gEvs[j] = e; }   // estavel, sem alocar
         const float vol = gVol.load(), pan = gPan.load(), gl = vol * std::min (1.0f, 1.0f - pan), gr = vol * std::min (1.0f, 1.0f + pan);
         int gpos = 0;
         auto gRender = [&] (int end)
@@ -259,10 +259,12 @@ void SynthKeyProcessor::rebuildLibrary()
     if (auto ul = hub.userLibrary()) lib->appendShared (*ul);          // samples importados pelo utilizador
     {
         const juce::ScopedLock sl (libLock);
-        retired.push_back (combined); combined = lib;
+        const auto now = juce::Time::getMillisecondCounter();
+        retired.push_back ({ combined, now }); combined = lib; combinedRaw.store (combined.get());
         pendingLib.store (combined.get());
-        // liberta bibliotecas antigas que o motor já não usa
-        retired.erase (std::remove_if (retired.begin(), retired.end(), [this] (const std::shared_ptr<const Library>& r) { return ! r || (r.get() != engineLib.load() && r.get() != pendingLib.load()); }), retired.end());
+        // liberta bibliotecas antigas que o motor ja nao usa (e com 10 s de margem: a thread de audio le combinedRaw sem lock)
+        retired.erase (std::remove_if (retired.begin(), retired.end(), [this, now] (const Retired& r)
+            { return ! r.lib || (r.lib.get() != engineLib.load() && r.lib.get() != pendingLib.load() && now - r.at > 10000); }), retired.end());
     }
     resolveSamples();
 }

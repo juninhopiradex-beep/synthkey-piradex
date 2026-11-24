@@ -71,6 +71,12 @@ a ativação online está prevista para a v1.1.
 
 * **Arpejador:** o padrão de 16 passos agora é editável — arrasta as barras (em baixo = pausa), clica no número para mudar a oitava, botão direito para repetir a nota ×2/×3, e escolhe quantos passos (1–16).
 
+## v1.7.0
+* **AAX (Pro Tools)** para macOS e Windows: `SYNTHKEY-by-Piradex-<versão>-*-AAX-*.zip` (ver `installer/LEIA-ME-AAX.txt`; sem conta PACE o AAX sai "não assinado" e só abre no Pro Tools Developer).
+* **Tempo real:** o arpejador, os acordes e a escala deixaram de reservar memória na thread de áudio (antes: ~25 000 alocações por cada 2000 blocos com o arpejador; agora 0 — teste `tests/test_rt.cpp`). Menos risco de estalos com muitas notas.
+* A troca de QUALIDADE já não bloqueia a thread de áudio; a mesma tecla carregada duas vezes sem note-off já não deixa acordes presos.
+* Nova senha master (a anterior estava escrita no repositório).
+
 ## v1.6.0
 
 * **Chaves de licença online (PCC):** no ecrã de senha também se pode escrever uma chave `SYN-XXXX-XXXX-XXXX`, validada no PCC (Plugin Control Central, Supabase). Fica presa ao primeiro computador que a ativar, funciona 14 dias sem internet e é revalidada no máximo 1 vez por dia; desativada no PCC, deixa de abrir o plugin. Uma chave **beta** abre todos os packs (como a senha beta); uma chave de **venda** abre o plugin e os packs continuam a precisar da sua própria chave. A senha master e as senhas beta continuam offline, como antes. Criar chaves no SQL Editor do PCC: `select * from pcc_new_synthkey_license('Nome','email','País','venda', null);`. Código: `Source/pcc/`.
