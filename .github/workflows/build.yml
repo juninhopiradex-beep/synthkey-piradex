@@ -161,6 +161,14 @@ jobs:
           cp dist-packs/*.bfpack dmg/Packs/
           hdiutil create -volname "SYNTHKEY by Piradex" -srcfolder dmg -ov -format UDZO "SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg"
           ls -la *.pkg *.dmg
+      - name: Instaladores separados (Mac Apple Silicon e Mac Intel com macOS 10.13 / Catalina ou mais recente)
+        env:
+          SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          INSTALLER_ID: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+        run: |
+          V=$(grep -m1 -oE 'project\([^)]*VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$')
+          bash ${{ github.workspace }}/ci/mac-split.sh stage/distribution.xml stage SYNTHKEY-by-Piradex "$V" "synthkey-plugins.pkg|root|com.piradex.synthkey.plugins|installer/scripts|/" "synthkey-packs.pkg|root-packs|com.piradex.synthkey.packs|installer/scripts-packs|/"
+
 
       # AAX: o Pro Tools normal so carrega plugins assinados pela PACE (wraptool).
       # Sem credenciais, sai um .zip "nao-assinado" (serve no Pro Tools Developer).
@@ -189,6 +197,8 @@ jobs:
         with:
           name: SYNTHKEY-macOS
           path: |
+            SYNTHKEY-by-Piradex-*-macOS-AppleSilicon.pkg
+            SYNTHKEY-by-Piradex-*-macOS-Intel-macOS10.13.pkg
             SYNTHKEY-by-Piradex-*-macOS.dmg
             SYNTHKEY-by-Piradex-*-macOS-AAX-*.zip
             pluginval-macOS.log
@@ -281,7 +291,7 @@ jobs:
           ls -la dist
           TAG="v$VERSAO"
           gh release delete "$TAG" -y --cleanup-tag -R "$GITHUB_REPOSITORY" || true
-          FICHEIROS=$(find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.zip' -o -name '*.bfpack' \))
+          FICHEIROS=$(find dist -type f \( -name '*.dmg' -o -name '*.pkg' -o -name '*.exe' -o -name '*.zip' -o -name '*.bfpack' \))
           echo "$FICHEIROS"
           gh release create "$TAG" $FICHEIROS -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "SYNTHKEY by Piradex $VERSAO" \
