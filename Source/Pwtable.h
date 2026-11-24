@@ -6,8 +6,8 @@ namespace pwtab
 inline constexpr sk::lic::PwEntry kPasswords[] =
 {
     { "master", sk::lic::Role::Master,
-      "bc97bf3b48b154028ef2deaf26921eed",
-      "5be2fe5449880db49380e2f8451f3c85108fba6c7598fa8184a7d8640810878d", 0, 0, 0 },
+      "22ed81609d2bfa8bc8dcd63dde22e290",
+      "94579aca858828105c2d9a821c2491cab3e81b0a93393c83c3944bf90a2c3193", 0, 0, 0 },
 
     { "beta-01", sk::lic::Role::Beta,
       "ba3dd9325c2859b7c5e0775ca03913ab",
