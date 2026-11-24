@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSAO: "1.7.0"
+  VERSAO: "1.0.1"
 
 jobs:
   testes-e-packs:
@@ -72,6 +72,9 @@ jobs:
       PACE_EDEN_URL: ${{ secrets.PACE_EDEN_URL }}
     steps:
       - uses: actions/checkout@v4
+      - name: pkgbuild sem verificacao de versao (a 1.0.1 instala por cima de versoes com numero maior)
+        working-directory: ${{ github.workspace }}
+        run: chmod +x ci/pkgbuild && echo "${{ github.workspace }}/ci" >> "$GITHUB_PATH"
       - name: Escolher um Xcode que ainda gera binarios para macOS 10.13 (o Xcode 26 sobe o minimo para 11.0)
         run: |
           ls -d /Applications/Xcode_*.app
@@ -282,4 +285,4 @@ jobs:
           echo "$FICHEIROS"
           gh release create "$TAG" $FICHEIROS -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "SYNTHKEY by Piradex $VERSAO" \
-            --notes "Novo na 1.7.0: formato AAX (Pro Tools; ver LEIA-ME-AAX.txt), arpejador e acordes sem alocacoes de memoria no audio (sem estalos com muitas notas), nova senha master. macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."
+            --notes "Versao 1.0.1: login obrigatorio desde ja (senha master, senha beta valida ate 31/12/2026 ou chave de licenca validada online pelo PCC). macOS (10.13+, Intel e Apple Silicon): SYNTHKEY-by-Piradex-$VERSAO-macOS.dmg · Windows 10/11 64 bits: SYNTHKEY-by-Piradex-$VERSAO-Windows-Setup.exe (ou o .zip manual). Packs de samples: SYNTHKEY_Pack_*.bfpack (também incluídos nos instaladores; ficam bloqueados até inserir a chave de cada pack)."

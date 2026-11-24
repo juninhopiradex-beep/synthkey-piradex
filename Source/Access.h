@@ -15,7 +15,7 @@ public:
     static AccessManager& get();
 
     // ---- login -----------------------------------------------------------
-    static bool inTrial()          { return sk::lic::todayDays2026() <= sk::keys::daysSince2026 (2026, 12, 31); } // aberto ate 31/12/2026
+    static bool inTrial()          { return false; }   // 1.0.1: sem periodo aberto - login obrigatorio desde ja (master, beta ate 31/12/2026 ou licenca PCC)
     bool isUnlocked() const        { return unlocked.load() || inTrial(); }
     sk::lic::Role role() const     { auto r = (sk::lic::Role) roleValue.load(); return (r == sk::lic::Role::None && inTrial()) ? sk::lic::Role::Beta : r; }
     juce::String roleText() const;                       // "MESTRE" / "BETA · até 01/11/2026"

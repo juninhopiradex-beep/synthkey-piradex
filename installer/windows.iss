@@ -1,8 +1,8 @@
 ; Instalador Windows do SYNTHKEY by Piradex (Inno Setup 6)
-; Compilado no GitHub Actions: ISCC /DVersao=1.7.0 installer\windows.iss
+; Compilado no GitHub Actions: ISCC /DVersao=1.0.1 installer\windows.iss
 
 #ifndef Versao
-  #define Versao "1.7.0"
+  #define Versao "1.0.1"
 #endif
 
 [Setup]
@@ -42,7 +42,7 @@ Name: "app"; Description: "Aplicação independente (Standalone)"; Types: full p
 Name: "packs"; Description: "Packs de samples (Trap, R&B, Afrobeats, Amapiano, Drill, Kizomba, Kuduro)"; Types: full custom
 
 [Messages]
-WelcomeLabel2=Este assistente vai instalar o SYNTHKEY by Piradex no teu sistema.%n%nProfessional Audio Plugin | Beatfreak Music%nCriador e Desenvolvedor: Ricardo Amorim / Juninho Piradex%nVersao 1.7.0
+WelcomeLabel2=Este assistente vai instalar o SYNTHKEY by Piradex no teu sistema.%n%nProfessional Audio Plugin | Beatfreak Music%nCriador e Desenvolvedor: Ricardo Amorim / Juninho Piradex%nVersao 1.0.1
 
 [Files]
 Source: "..\build\SynthKey_artefacts\Release\VST3\SYNTHKEY by Piradex.vst3\*"; \
