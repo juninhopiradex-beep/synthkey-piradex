@@ -3,6 +3,12 @@
 Sintetizador VSTi / Audio Unit híbrido (analógico + wavetable + samples) com **packs de estilo** (Trap, R&B,
 Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neon, 110 presets de fábrica.
 
+> **Versão atual: 1.0.2** (todos os plugins Piradex passaram a ter a mesma numeração; as versões abaixo de "Histórico" são da numeração antiga).
+>
+> * **Login:** obrigatório desde a 1.0.1 — senha master, senha beta (válida até 31/12/2026) ou chave de licença validada online no PCC. Sem sessão, o áudio passa intacto.
+> * **Instaladores (loja www.beatfreakstudio.com/loja):** Mac Apple Silicon (`…-macOS-AppleSilicon.pkg`), Mac Intel com macOS 10.13 ou mais recente (`…-macOS-Intel-macOS10.13.pkg`), Windows (`…-Windows-Setup.exe`) e AAX para Pro Tools (`…-AAX-*.zip`, ver LEIA-ME-AAX.txt).
+> * **Criador e desenvolvedor:** Ricardo Amorim / Juninho Piradex.
+
 * **Formatos:** VST3 + AU + Standalone (macOS) · VST3 + Standalone (Windows 10/11 x64)
 * **macOS:** binário universal (Apple Silicon + Intel), **mínimo 10.13** · **Windows:** runtime estático (sem VC++ Redistributable)
 * **Motor:** 2 motores (A/B: analógico, wavetable ou sample) · sub + ruído · 2 filtros (9 tipos) · 3 envelopes · 2 LFOs ·
@@ -15,8 +21,8 @@ Afrobeats, Amapiano, Drill, Kizomba, Kuduro) bloqueados por chave. Interface neo
    * nome: `SYNTHKEY_SECRETS_B64`
    * valor: conteúdo do ficheiro `secrets.b64` (gerado por `python3 tools/gen_secrets.py`)
 3. **Actions → Build SYNTHKEY → Run workflow**. No fim, a página **Releases** tem:
-   * `SYNTHKEY-by-Piradex-1.6.0-macOS.dmg` (contém o `.pkg`, plugins soltos e packs)
-   * `SYNTHKEY-by-Piradex-1.6.0-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
+   * `SYNTHKEY-by-Piradex-1.0.1-macOS-AppleSilicon.pkg` / `…-macOS-Intel-macOS10.13.pkg` (contém o `.pkg`, plugins soltos e packs)
+   * `SYNTHKEY-by-Piradex-1.0.1-Windows-Setup.exe` (+ `…-Windows-Manual.zip`)
    * `SYNTHKEY_Pack_<estilo>_1.2.0.bfpack` (um por estilo)
 
 O workflow corre os testes (DSP, chaves, packs, presets), gera os packs com o segredo, compila, verifica
