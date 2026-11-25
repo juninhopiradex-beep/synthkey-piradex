@@ -62,7 +62,9 @@ target_sources(SynthKey PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Access.cpp
-    Source/PackHub.cpp)
+    Source/PackHub.cpp
+    Source/i18n/PiradexLanguage.cpp
+    Source/i18n/ZhTable.cpp)
 target_include_directories(SynthKey PRIVATE Source)
 
 # PCC (Plugin Control Central): chaves de licença validadas online, mesma infraestrutura de todos os plugins Piradex
@@ -111,7 +113,7 @@ endif()
 option(SK_BUILD_SMOKE "Compilar o teste de fumo do processador" OFF)
 if(SK_BUILD_SMOKE)
     juce_add_console_app(SynthKeySmoke PRODUCT_NAME "synthkey_smoke")
-    target_sources(SynthKeySmoke PRIVATE tests/smoke.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Access.cpp Source/PackHub.cpp)
+    target_sources(SynthKeySmoke PRIVATE tests/smoke.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Access.cpp Source/PackHub.cpp Source/i18n/PiradexLanguage.cpp Source/i18n/ZhTable.cpp)
     target_include_directories(SynthKeySmoke PRIVATE Source)
     target_compile_definitions(SynthKeySmoke PRIVATE PIRADEX_TEST_OPEN=1 PIRADEX_PCC_URL="${PIRADEX_PCC_URL}" PIRADEX_PCC_PUBKEY="${PIRADEX_PCC_PUBKEY}" PIRADEX_PCC_VERSION="${PROJECT_VERSION}" JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_STANDALONE_APPLICATION=1 SK_VERSION_STRING="${PROJECT_VERSION}")
     target_link_libraries(SynthKeySmoke PRIVATE SynthKeyAssets juce::juce_audio_utils juce::juce_audio_processors juce::juce_cryptography juce::juce_dsp juce::juce_recommended_config_flags)

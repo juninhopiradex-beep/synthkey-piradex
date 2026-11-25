@@ -325,8 +325,10 @@ private:
         m.addItem (1, TX ("Guardar preset\xE2\x80\xA6")); m.addItem (2, TX ("Preset vazio (Init)")); m.addItem (3, TX ("Aleatorizar timbre (suave)")); m.addItem (4, TX ("Aleatorizar timbre (forte)"));
         m.addItem (8, TX ("\xE2\x9C\xA6 Descrever som\xE2\x80\xA6")); m.addItem (9, TX ("Ajuda e novidades"));
         m.addSeparator(); m.addItem (5, TX ("Abrir pasta de presets do utilizador"));
+        m.addSeparator(); piradex::i18n::addLanguageItems (m);   // 1.0.2: PT / EN / ZH
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&menuBtn), [this] (int r)
         {
+            if (piradex::i18n::handleLanguageItem (r)) { toast.show (TX ("O idioma muda ao reabrir a janela do plugin."), false); return; }
             if (r == 1) prompt.open (TX ("Guardar preset"), TX ("Aparece em \"Utilizador\". Etiquetas opcionais depois de # \xE2\x80\x94 ex.: Meu Lead #lead, brilhante, agressivo"), proc.currentPresetName() == "Init" ? juce::String() : proc.currentPresetName(), TX ("GUARDAR"),
                 [this] (const juce::String& txt) -> juce::String
                 {

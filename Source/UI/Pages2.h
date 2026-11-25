@@ -2,6 +2,7 @@
 //  SYNTHKEY by Piradex — páginas PACKS e ADMIN, janela de login e caixa de diálogo
 // =============================================================================
 #pragma once
+#include "../i18n/PiradexKitUI.h"
 #include "Pages1.h"
 #include "StudioUI.h"
 
@@ -60,63 +61,43 @@ private:
 };
 
 // ======================================================================================= login
+// 1.0.2: ecra de login unico Piradex (kit partilhado)
 class LoginOverlay : public juce::Component
 {
 public:
     std::function<void()> onUnlocked;
     LoginOverlay()
     {
-        addAndMakeVisible (pw); addAndMakeVisible (remember); addAndMakeVisible (enter);
-        pw.setPasswordCharacter ((juce::juce_wchar) 0x2022); pw.setFont (theme::font (18.0f)); pw.setJustification (juce::Justification::centred);
-        pw.setTextToShowWhenEmpty (TX ("senha de acesso"), theme::dim()); pw.onReturnKey = [this] { attempt(); };
-        remember.setButtonText (TX ("Lembrar neste computador")); remember.setToggleState (true, juce::dontSendNotification);
-        enter.setButtonText (TX ("ENTRAR")); enter.onClick = [this] { attempt(); };
+        screen.onSubmit = [this] (const juce::String& p, bool rem) { attempt (p, rem); };
+        addAndMakeVisible (screen);
     }
-    void focus() { pw.grabKeyboardFocus(); }
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (juce::Colour (0xE8050610));
-        theme::drawCard (g, card.toFloat(), 16.0f, true);
-        // logótipo
-        auto t = card.withHeight (70).translated (0, 28);
-        for (int i = 3; i >= 0; --i) { g.setColour (theme::accent().withAlpha (0.05f * (float) (4 - i))); g.setFont (theme::font (44.0f + (float) i * 2, true)); g.drawText ("SYNTHKEY", t.expanded (i * 2, 0), juce::Justification::centred); }
-        g.setGradientFill (juce::ColourGradient (theme::accent(), (float) t.getX() + 100, 0, theme::accent2(), (float) t.getRight() - 100, 0, false)); g.setFont (theme::font (44.0f, true)); g.drawText ("SYNTHKEY", t, juce::Justification::centred);
-        g.setColour (theme::dim()); g.setFont (theme::font (12.5f)); g.drawText (TX ("by Piradex  \xC2\xB7  BeatFreak Studio"), card.getX(), card.getY() + 92, card.getWidth(), 18, juce::Justification::centred);
-        g.setColour (theme::text()); g.setFont (theme::font (13.0f)); g.drawText (TX ("Acesso restrito \xC2\xB7 vers\xC3\xA3o beta"), card.getX(), card.getY() + 126, card.getWidth(), 18, juce::Justification::centred);
-        if (message.isNotEmpty()) { g.setColour (isError ? theme::bad() : theme::good()); g.setFont (theme::font (13.0f, true)); g.drawText (message, card.getX() + 20, card.getBottom() - 60, card.getWidth() - 40, 22, juce::Justification::centred); }
-        g.setColour (theme::dim().withAlpha (0.7f)); g.setFont (theme::font (11.0f)); g.drawText ("v" SK_VERSION_STRING, card.getX(), card.getBottom() - 24, card.getWidth(), 16, juce::Justification::centred);
-    }
-    void resized() override
-    {
-        card = juce::Rectangle<int> (0, 0, 460, 360).withCentre (getLocalBounds().getCentre());
-        pw.setBounds (card.getX() + 60, card.getY() + 158, card.getWidth() - 120, 40);
-        remember.setBounds (card.getX() + 100, card.getY() + 208, card.getWidth() - 200, 24);
-        enter.setBounds (card.getX() + 100, card.getY() + 244, card.getWidth() - 200, 40);
-    }
+    void focus() { screen.focusField(); }
+    void resized() override { screen.setBounds (getLocalBounds()); }
+    void mouseDown (const juce::MouseEvent&) override {}
 private:
-    void attempt()
+    void attempt (const juce::String& text, bool rem)
     {
-        if (busy || pw.getText().trim().isEmpty()) return;
-        busy = true; enter.setEnabled (false); message = TX ("A verificar\xE2\x80\xA6"); isError = false; repaint();
-        const auto text = pw.getText(); const bool rem = remember.getToggleState(); juce::Component::SafePointer<LoginOverlay> self (this);
+        if (busy || text.trim().isEmpty()) return;
+        busy = true; screen.setBusy (true);
+        juce::Component::SafePointer<LoginOverlay> self (this);
         juce::Thread::launch ([self, text, rem]
         {
             const auto m = AccessManager::matchPassword (text);          // PBKDF2: fora da thread de mensagens
-            piradex::pcc::Check online;                                  // chave de licença: pergunta ao PCC
+            piradex::pcc::Check online;                                  // chave de licenca: pergunta ao PCC
             if (m.index < 0 && ! m.expired) online = AccessManager::checkOnline (text);
             juce::MessageManager::callAsync ([self, m, rem, online]
             {
                 if (self == nullptr) return;
                 const auto r = online.outcome != piradex::pcc::Outcome::Disabled ? AccessManager::get().applyOnline (online, rem)
                                                                                  : AccessManager::get().applyLogin (m, rem);
-                self->busy = false; self->enter.setEnabled (true);
-                if (r == AccessManager::LoginResult::Ok) { self->pw.clear(); self->message.clear(); if (self->onUnlocked) self->onUnlocked(); }
-                else { self->isError = true; self->message = r == AccessManager::LoginResult::Online ? AccessManager::get().onlineText() : r == AccessManager::LoginResult::Expired ? TX ("Esta senha beta j\xC3\xA1 expirou.") : TX ("Senha incorreta."); self->pw.selectAll(); self->pw.grabKeyboardFocus(); }
-                self->repaint();
+                self->busy = false; self->screen.setBusy (false);
+                if (r == AccessManager::LoginResult::Ok) { self->screen.clearField(); self->screen.setStatus ({}, false); if (self->onUnlocked) self->onUnlocked(); }
+                else self->screen.setStatus (r == AccessManager::LoginResult::Online ? AccessManager::get().onlineText() : r == AccessManager::LoginResult::Expired ? TX ("Esta senha beta j\xC3\xA1 expirou.") : TX ("Senha incorreta."), true);
             });
         });
     }
-    juce::TextEditor pw; juce::ToggleButton remember; juce::TextButton enter; juce::String message; bool isError = false, busy = false; juce::Rectangle<int> card;
+    piradex::kit::LoginScreen screen { "SYNTHKEY", theme::accent(), SK_VERSION_STRING };
+    bool busy = false;
 };
 
 // ======================================================================================= PACKS

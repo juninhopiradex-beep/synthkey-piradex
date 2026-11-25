@@ -90,11 +90,11 @@ private:
         // ---- samples do utilizador
         {
             juce::PopupMenu usr; const auto ui = PackHub::get().userInstruments(); int userBase = 5000;
-            if (ui.empty()) usr.addItem (-1, TX ("(vazio â importa um WAV)"), false);
-            for (auto& in : ui) { usr.addItem (userBase + (int) userIds.size(), TX (in.name.c_str()) + (in.cat == "Tonal" ? juce::String() : TX ("   Â· percussÃ£o")), true, proc.getSampleId (E).toStdString() == in.id); userIds.push_back (in.id); }
-            usr.addSeparator(); usr.addItem (900, TX ("Importar WAVâ¦"));
+            if (ui.empty()) usr.addItem (-1, TX ("(vazio — importa um WAV)"), false);
+            for (auto& in : ui) { usr.addItem (userBase + (int) userIds.size(), TX (in.name.c_str()) + (in.cat == "Tonal" ? juce::String() : TX ("   · percussão")), true, proc.getSampleId (E).toStdString() == in.id); userIds.push_back (in.id); }
+            usr.addSeparator(); usr.addItem (900, TX ("Importar WAV…"));
             usr.addItem (901, TX ("Abrir pasta de samples"));
-            if (! ui.empty()) { juce::PopupMenu del; for (size_t i = 0; i < ui.size(); ++i) del.addItem (7000 + (int) i, TX (ui[i].name.c_str())); usr.addSubMenu (TX ("Apagar sampleâ¦"), del); }
+            if (! ui.empty()) { juce::PopupMenu del; for (size_t i = 0; i < ui.size(); ++i) del.addItem (7000 + (int) i, TX (ui[i].name.c_str())); usr.addSubMenu (TX ("Apagar sample…"), del); }
             menu.addSeparator(); menu.addSubMenu (TX ("Utilizador (os teus WAV)"), usr);
         }
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (getWidth()), [this] (int r)

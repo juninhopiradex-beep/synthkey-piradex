@@ -2,6 +2,7 @@
 //  SYNTHKEY by Piradex — ecrã de ajuda / tutorial (abre na primeira utilização da v1.5)
 // =============================================================================
 #pragma once
+#include "../i18n/PiradexKitUI.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "Look.h"
 #include "../AppPaths.h"
@@ -19,8 +20,14 @@ public:
         setVisible (false);
     }
     void open() { setVisible (true); toFront (true); resized(); repaint(); }
-    void openIfFirstRun() { if (! helpSeenFile().existsAsFile()) open(); }
-    void dismiss() { helpSeenFile().replaceWithText ("1"); setVisible (false); }
+    // 1.0.2: novidades e atalhos nas 3 primeiras aberturas de cada versao (e sempre pelo botao ?)
+    void openIfFirstRun()
+    {
+        static bool decided = false, show = false;
+        if (! decided) { decided = true; show = piradex::kit::Welcome::shouldShow ("synthkey", SK_VERSION_STRING); }
+        if (show) { show = false; open(); }
+    }
+    void dismiss() { setVisible (false); }
 
     void paint (juce::Graphics& g) override
     {
@@ -39,7 +46,7 @@ public:
         g.fillAll (juce::Colour (0xD0050610));
         theme::drawCard (g, card.toFloat(), 16.0f, true);
         g.setColour (theme::accent()); g.fillRoundedRectangle ((float) card.getX() + 24, (float) card.getY() + 26, 3.0f, 20.0f, 1.5f);
-        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY 1.5"), card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
+        g.setColour (theme::text()); g.setFont (theme::font (21.0f, true)); g.drawText (TX ("Novidades e atalhos \xE2\x80\x94 SYNTHKEY ") + SK_VERSION_STRING, card.getX() + 38, card.getY() + 20, card.getWidth() - 60, 32, juce::Justification::centredLeft);
         int y = card.getY() + 66;
         for (auto& it : items)
         {

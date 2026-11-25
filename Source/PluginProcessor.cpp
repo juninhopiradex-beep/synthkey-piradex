@@ -1,3 +1,4 @@
+#include "i18n/PiradexLanguage.h"
 #include "PluginProcessor.h"
 #include "UserAudio.h"
 #include "PluginEditor.h"
@@ -54,6 +55,7 @@ SynthKeyProcessor::SynthKeyProcessor()
       apvts (*this, nullptr, "SYNTHKEY", createLayout()),
       engine (new Engine()), engineG (new Engine())
 {
+    piradex::i18n::registerPluginTable();
     for (int i = 0; i < P_COUNT; ++i)
     {
         if (i == P_A_SMP || i == P_B_SMP) continue;

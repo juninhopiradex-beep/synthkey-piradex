@@ -2,9 +2,11 @@
 //  SYNTHKEY by Piradex — tema visual: "Liquid Chrome" com 5 paletas neon
 // =============================================================================
 #pragma once
+#include "../i18n/PiradexLanguage.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
-inline juce::String TX (const char* utf8) { return juce::String::fromUTF8 (utf8); }
+// 1.0.2: PT no codigo; EN / ZH pela tabela ZhTable (chave = PT). Aplica-se ao abrir a janela do plugin.
+inline juce::String TX (const char* utf8) { return piradex::i18n::trPt (utf8); }
 
 namespace theme
 {
